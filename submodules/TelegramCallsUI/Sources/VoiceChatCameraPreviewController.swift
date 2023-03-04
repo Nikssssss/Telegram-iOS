@@ -35,14 +35,19 @@ final class VoiceChatCameraPreviewController: ViewController {
     private let cameraNode: PreviewVideoNode
     private let shareCamera: (ASDisplayNode, Bool) -> Void
     private let switchCamera: () -> Void
+    private let onCancel: (() -> Void)?
     
     private var presentationDataDisposable: Disposable?
     
-    init(sharedContext: SharedAccountContext, cameraNode: PreviewVideoNode, shareCamera: @escaping (ASDisplayNode, Bool) -> Void, switchCamera: @escaping () -> Void) {
+    private var isModernAppearance: Bool
+    
+    init(sharedContext: SharedAccountContext, cameraNode: PreviewVideoNode, isModernAppearance: Bool = false, shareCamera: @escaping (ASDisplayNode, Bool) -> Void, switchCamera: @escaping () -> Void, onCancel: (() -> Void)? = nil) {
         self.sharedContext = sharedContext
         self.cameraNode = cameraNode
         self.shareCamera = shareCamera
         self.switchCamera = switchCamera
+        self.onCancel = onCancel
+        self.isModernAppearance = isModernAppearance
         
         super.init(navigationBarPresentationData: nil)
         
@@ -69,7 +74,7 @@ final class VoiceChatCameraPreviewController: ViewController {
     }
     
     override public func loadDisplayNode() {
-        self.displayNode = VoiceChatCameraPreviewControllerNode(controller: self, sharedContext: self.sharedContext, cameraNode: self.cameraNode)
+        self.displayNode = VoiceChatCameraPreviewControllerNode(controller: self, sharedContext: self.sharedContext, cameraNode: self.cameraNode, isModernAppearance: isModernAppearance)
         self.controllerNode.shareCamera = { [weak self] unmuted in
             if let strongSelf = self {
                 strongSelf.shareCamera(strongSelf.cameraNode, unmuted)
@@ -85,6 +90,7 @@ final class VoiceChatCameraPreviewController: ViewController {
         }
         self.controllerNode.cancel = { [weak self] in
             self?.dismiss()
+            self?.onCancel?()
         }
     }
     
@@ -143,15 +149,18 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
     
     private let readyDisposable = MetaDisposable()
     
+    private var isModernAppearance: Bool
+    
     var shareCamera: ((Bool) -> Void)?
     var switchCamera: (() -> Void)?
     var dismiss: (() -> Void)?
     var cancel: (() -> Void)?
     
-    init(controller: VoiceChatCameraPreviewController, sharedContext: SharedAccountContext, cameraNode: PreviewVideoNode) {
+    init(controller: VoiceChatCameraPreviewController, sharedContext: SharedAccountContext, cameraNode: PreviewVideoNode, isModernAppearance: Bool = false) {
         self.controller = controller
         self.sharedContext = sharedContext
         self.presentationData = sharedContext.currentPresentationData.with { $0 }
+        self.isModernAppearance = isModernAppearance
         
         self.cameraNode = cameraNode
         
@@ -180,8 +189,13 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
         self.titleNode = ASTextNode()
         self.titleNode.attributedText = NSAttributedString(string: title, font: Font.bold(17.0), textColor: UIColor(rgb: 0xffffff))
                 
-        self.doneButton = SolidRoundedButtonNode(theme: SolidRoundedButtonTheme(backgroundColor: UIColor(rgb: 0xffffff), foregroundColor: UIColor(rgb: 0x4f5352)), font: .bold, height: 48.0, cornerRadius: 24.0, gloss: false)
-        self.doneButton.title = self.presentationData.strings.VoiceChat_VideoPreviewContinue
+        if isModernAppearance {
+            self.doneButton = SolidRoundedButtonNode(theme: SolidRoundedButtonTheme(backgroundColor: UIColor(rgb: 0xffffff), foregroundColor: UIColor(rgb: 0x4f5352)), font: .bold, height: 50, cornerRadius: 14, gloss: false)
+            self.doneButton.title = self.presentationData.strings.Call_VideoPreviewStartVideo
+        } else {
+            self.doneButton = SolidRoundedButtonNode(theme: SolidRoundedButtonTheme(backgroundColor: UIColor(rgb: 0xffffff), foregroundColor: UIColor(rgb: 0x4f5352)), font: .bold, height: 48.0, cornerRadius: 24.0, gloss: false)
+            self.doneButton.title = self.presentationData.strings.VoiceChat_VideoPreviewContinue
+        }
         
         if #available(iOS 12.0, *) {
             let broadcastPickerView = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 50, height: 52.0))
@@ -213,7 +227,7 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
         self.placeholderIconNode.contentMode = .scaleAspectFit
         self.placeholderIconNode.displaysAsynchronously = false
         
-        self.wheelNode = WheelControlNode(items: [WheelControlNode.Item(title: UIDevice.current.model == "iPad" ? self.presentationData.strings.VoiceChat_VideoPreviewTabletScreen : self.presentationData.strings.VoiceChat_VideoPreviewPhoneScreen), WheelControlNode.Item(title: self.presentationData.strings.VoiceChat_VideoPreviewFrontCamera), WheelControlNode.Item(title: self.presentationData.strings.VoiceChat_VideoPreviewBackCamera)], selectedIndex: self.selectedTabIndex)
+        self.wheelNode = WheelControlNode(items: [WheelControlNode.Item(title: UIDevice.current.model == "iPad" ? self.presentationData.strings.VoiceChat_VideoPreviewTabletScreen : self.presentationData.strings.VoiceChat_VideoPreviewPhoneScreen), WheelControlNode.Item(title: self.presentationData.strings.VoiceChat_VideoPreviewFrontCamera), WheelControlNode.Item(title: self.presentationData.strings.VoiceChat_VideoPreviewBackCamera)], selectedIndex: self.selectedTabIndex, isModernAppearance: isModernAppearance)
         
         super.init()
         
@@ -432,9 +446,15 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
             if isTablet {
                 contentSize = CGSize(width: 600.0, height: 960.0)
             } else {
-                contentSize = CGSize(width: layout.size.width, height: layout.size.height - insets.top - 8.0)
+                if isModernAppearance {
+                    contentSize = CGSize(width: layout.size.width, height: layout.size.height)
+                } else {
+                    contentSize = CGSize(width: layout.size.width, height: layout.size.height - insets.top - 8.0)
+                }
             }
         }
+        
+        let navigationOffset = layout.safeInsets.top + 25
         
         let sideInset = floor((layout.size.width - contentSize.width) / 2.0)
         let contentFrame: CGRect
@@ -456,7 +476,12 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
         transition.updateFrame(node: self.dimNode, frame: CGRect(origin: CGPoint(), size: layout.size))
         
         let titleSize = self.titleNode.measure(CGSize(width: contentFrame.width, height: .greatestFiniteMagnitude))
-        let titleFrame = CGRect(origin: CGPoint(x: floor((contentFrame.width - titleSize.width) / 2.0), y: 20.0), size: titleSize)
+        let titleFrame: CGRect
+        if isModernAppearance {
+            titleFrame = CGRect(origin: CGPoint(x: floor((contentFrame.width - titleSize.width) / 2.0), y: navigationOffset), size: titleSize)
+        } else {
+            titleFrame = CGRect(origin: CGPoint(x: floor((contentFrame.width - titleSize.width) / 2.0), y: 20.0), size: titleSize)
+        }
         transition.updateFrame(node: self.titleNode, frame: titleFrame)
                 
         var previewSize: CGSize
@@ -467,7 +492,11 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
             previewSize = CGSize(width: min(contentFrame.width - layout.safeInsets.left - layout.safeInsets.right, ceil(previewHeight * previewAspectRatio)), height: previewHeight)
             previewFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((contentFrame.width - previewSize.width) / 2.0), y: 0.0), size: previewSize)
         } else {
-            previewSize = CGSize(width: contentFrame.width, height: min(contentFrame.height, ceil(contentFrame.width * previewAspectRatio)))
+            if isModernAppearance {
+                previewSize = CGSize(width: contentFrame.width, height: contentFrame.height)
+            } else {
+                previewSize = CGSize(width: contentFrame.width, height: min(contentFrame.height, ceil(contentFrame.width * previewAspectRatio)))
+            }
             previewFrame = CGRect(origin: CGPoint(), size: previewSize)
         }
         transition.updateFrame(node: self.previewContainerNode, frame: previewFrame)
@@ -476,7 +505,12 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
         self.shimmerNode.updateAbsoluteRect(previewFrame, within: layout.size)
         
         let cancelButtonSize = self.cancelButton.measure(CGSize(width: (previewFrame.width - titleSize.width) / 2.0, height: .greatestFiniteMagnitude))
-        let cancelButtonFrame = CGRect(origin: CGPoint(x: previewFrame.minX + 17.0, y: 20.0), size: cancelButtonSize)
+        let cancelButtonFrame: CGRect
+        if isModernAppearance {
+            cancelButtonFrame = CGRect(origin: CGPoint(x: previewFrame.minX + 17.0, y: navigationOffset), size: cancelButtonSize)
+        } else {
+            cancelButtonFrame = CGRect(origin: CGPoint(x: previewFrame.minX + 17.0, y: 20.0), size: cancelButtonSize)
+        }
         transition.updateFrame(node: self.cancelButton, frame: cancelButtonFrame)
         
         self.cameraNode.frame =  CGRect(origin: CGPoint(), size: previewSize)
@@ -491,15 +525,25 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
             transition.updateFrame(node: self.placeholderIconNode, frame: CGRect(origin: CGPoint(x: floor((previewSize.width - imageSize.width) / 2.0), y: floorToScreenPixels(previewSize.height / 2.0) - imageSize.height - 8.0), size: imageSize))
         }
 
-        let buttonInset: CGFloat = 16.0
+        let buttonSideInset: CGFloat = 16.0
+        let buttonBottomInset: CGFloat = 48
         let buttonMaxWidth: CGFloat = 360.0
         
-        let buttonWidth = min(buttonMaxWidth, contentFrame.width - buttonInset * 2.0)
+        let buttonWidth = min(buttonMaxWidth, contentFrame.width - buttonSideInset * 2.0)
         let doneButtonHeight = self.doneButton.updateLayout(width: buttonWidth, transition: transition)
-        transition.updateFrame(node: self.doneButton, frame: CGRect(x: floorToScreenPixels((contentFrame.width - buttonWidth) / 2.0), y: previewFrame.maxY - doneButtonHeight - buttonInset, width: buttonWidth, height: doneButtonHeight))
+        if isModernAppearance {
+            transition.updateFrame(node: self.doneButton, frame: CGRect(x: floorToScreenPixels((contentFrame.width - buttonWidth) / 2.0), y: previewFrame.maxY - doneButtonHeight - buttonBottomInset, width: buttonWidth, height: doneButtonHeight))
+        } else {
+            transition.updateFrame(node: self.doneButton, frame: CGRect(x: floorToScreenPixels((contentFrame.width - buttonWidth) / 2.0), y: previewFrame.maxY - doneButtonHeight - buttonSideInset, width: buttonWidth, height: doneButtonHeight))
+        }
         self.broadcastPickerView?.frame = self.doneButton.frame
         
-        let wheelFrame = CGRect(origin: CGPoint(x: 16.0 + previewFrame.minX, y: previewFrame.maxY - doneButtonHeight - buttonInset - 36.0 - 20.0), size: CGSize(width: previewFrame.width - 32.0, height: 36.0))
+        let wheelFrame: CGRect
+        if isModernAppearance {
+            wheelFrame = CGRect(origin: CGPoint(x: 16.0 + previewFrame.minX, y: previewFrame.maxY - doneButtonHeight - buttonBottomInset - 36.0 - 20.0), size: CGSize(width: previewFrame.width - 32.0, height: 36.0))
+        } else {
+            wheelFrame = CGRect(origin: CGPoint(x: 16.0 + previewFrame.minX, y: previewFrame.maxY - doneButtonHeight - buttonSideInset - 36.0 - 20.0), size: CGSize(width: previewFrame.width - 32.0, height: 36.0))
+        }
         self.wheelNode.updateLayout(size: wheelFrame.size, transition: transition)
         transition.updateFrame(node: self.wheelNode, frame: wheelFrame)
         
@@ -508,6 +552,7 @@ private class VoiceChatCameraPreviewControllerNode: ViewControllerTracingNode, U
 }
 
 private let textFont = Font.with(size: 14.0, design: .camera, weight: .regular)
+private let modernTextFont = Font.with(size: 14.0, design: .camera, weight: .semibold)
 private let selectedTextFont = Font.with(size: 14.0, design: .camera, weight: .semibold)
 
 private class WheelControlNode: ASDisplayNode, UIGestureRecognizerDelegate {
@@ -527,6 +572,8 @@ private class WheelControlNode: ASDisplayNode, UIGestureRecognizerDelegate {
 
     private var _items: [Item]
     private var _selectedIndex: Int = 0
+    
+    private let isModernAppearance: Bool
     
     public var selectedIndex: Int {
         get {
@@ -555,9 +602,10 @@ private class WheelControlNode: ASDisplayNode, UIGestureRecognizerDelegate {
     
     public var selectedIndexChanged: (Int) -> Void = { _ in }
         
-    public init(items: [Item], selectedIndex: Int) {
+    public init(items: [Item], selectedIndex: Int, isModernAppearance: Bool = false) {
         self._items = items
         self._selectedIndex = selectedIndex
+        self.isModernAppearance = isModernAppearance
         
         self.maskNode = ASDisplayNode()
         self.maskNode.setLayerBlock({
@@ -578,7 +626,16 @@ private class WheelControlNode: ASDisplayNode, UIGestureRecognizerDelegate {
             itemNode.accessibilityLabel = item.title
             itemNode.accessibilityTraits = [.button]
             itemNode.hitTestSlop = UIEdgeInsets(top: -10.0, left: -5.0, bottom: -10.0, right: -5.0)
-            itemNode.setTitle(item.title.uppercased(), with: textFont, with: .white, for: .normal)
+            let normalTextFont: UIFont
+            let color: UIColor
+            if isModernAppearance {
+                normalTextFont = modernTextFont
+                color = .white.withAlphaComponent(0.5)
+            } else {
+                normalTextFont = textFont
+                color = .white
+            }
+            itemNode.setTitle(item.title.uppercased(), with: normalTextFont, with: color, for: .normal)
             itemNode.titleNode.shadowColor = UIColor.black.cgColor
             itemNode.titleNode.shadowOffset = CGSize()
             itemNode.titleNode.layer.shadowRadius = 2.0
@@ -632,7 +689,19 @@ private class WheelControlNode: ASDisplayNode, UIGestureRecognizerDelegate {
                 if itemNode.isSelected != isSelected {
                     itemNode.isSelected = isSelected
                     let title = itemNode.attributedTitle(for: .normal)?.string ?? ""
-                    itemNode.setTitle(title, with: isSelected ? selectedTextFont : textFont, with: isSelected ? UIColor(rgb: 0xffd60a) : .white, for: .normal)
+                    let normalTextFont: UIFont
+                    let selectedTextColor: UIColor
+                    let normalTextColor: UIColor
+                    if isModernAppearance {
+                        normalTextFont = modernTextFont
+                        selectedTextColor = .white
+                        normalTextColor = .white.withAlphaComponent(0.5)
+                    } else {
+                        normalTextFont = textFont
+                        selectedTextColor = UIColor(rgb: 0xffd60a)
+                        normalTextColor = .white
+                    }
+                    itemNode.setTitle(title, with: isSelected ? selectedTextFont : normalTextFont, with: isSelected ? selectedTextColor : normalTextColor, for: .normal)
                     if isSelected {
                         itemNode.accessibilityTraits.insert(.selected)
                     } else {

@@ -2586,6 +2586,12 @@ Unused sets are archived when you add more.";
 "Call.RecordingDisabledMessage" = "Please end your call before recording a voice message.";
 
 "Call.EmojiDescription" = "If these emoji are the same on %@'s screen, this call is 100%% secure.";
+"Call.EmojiTitle" = "This call is end-to-end encrypted";
+"Call.EmojiKeyTooltipTitle" = "Encryption key of this call";
+"Call.RatingTitle" = "Rate This Call";
+"Call.RatingDescription" = "Please rate the quality of this call.";
+"Call.RatingClose" = "Close";
+"Call.VideoPreviewStartVideo" = "Start Video";
 
 "Message.VideoMessage" = "Video Message";
 

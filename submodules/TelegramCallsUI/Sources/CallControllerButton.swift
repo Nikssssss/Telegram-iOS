@@ -30,20 +30,20 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
             }
         }
         
-        enum Image {
+        enum Image: Equatable {
             case cameraOff
             case cameraOn
-            case camera
-            case mute
-            case flipCamera
-            case bluetooth
-            case speaker
-            case airpods
-            case airpodsPro
-            case airpodsMax
+            case camera(isModern: Bool)
+            case mute(isModern: Bool)
+            case flipCamera(isModern: Bool)
+            case bluetooth(isModern: Bool)
+            case speaker(isModern: Bool)
+            case airpods(isModern: Bool)
+            case airpodsPro(isModern: Bool)
+            case airpodsMax(isModern: Bool)
             case headphones
             case accept
-            case end
+            case end(isDecline: Bool)
             case cancel
             case share
             case screencast
@@ -225,7 +225,24 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
                 let imageColor: UIColor = .white
                 var drawOverMask = false
                 context.setBlendMode(.normal)
-                let imageScale: CGFloat = 1.0
+                
+                let imageScale: CGFloat
+                switch content.image {
+                case let .airpods(isModern),
+                     let .airpodsMax(isModern),
+                     let .airpodsPro(isModern),
+                     let .bluetooth(isModern),
+                     let .camera(isModern),
+                     let .flipCamera(isModern),
+                     let .mute(isModern),
+                     let .speaker(isModern):
+                    imageScale = isModern ? 1.2 : 1
+                case let .end(isDecline):
+                    imageScale = !isDecline ? 1.2 : 1
+                default:
+                    imageScale = 1
+                }
+                
                 switch content.appearance {
                 case let .blurred(isFilled):
                     if content.hasProgress {
@@ -259,28 +276,46 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
                 switch content.image {
                 case .cameraOff, .cameraOn:
                     image = nil
-                case .camera:
-                    image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallCameraButton"), color: imageColor)
-                case .mute:
-                    image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallMuteButton"), color: imageColor)
-                case .flipCamera:
-                    image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallSwitchCameraButton"), color: imageColor)
-                case .bluetooth:
-                    image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallBluetoothButton"), color: imageColor)
-                case .speaker:
-                    image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallSpeakerButton"), color: imageColor)
-                case .airpods:
-                    image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallAirpodsButton"), color: imageColor)
-                case .airpodsPro:
-                    image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallAirpodsProButton"), color: imageColor)
-                case .airpodsMax:
-                    image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallAirpodsMaxButton"), color: imageColor)
+                case let .camera(isModern):
+                    image = isModern
+                        ? generateTintedImage(image: UIImage(bundleImageName: "Call/CallCameraButtonModern"), color: imageColor)
+                        : generateTintedImage(image: UIImage(bundleImageName: "Call/CallCameraButton"), color: imageColor)
+                case let .mute(isModern):
+                    image = isModern
+                        ? generateTintedImage(image: UIImage(bundleImageName: "Call/CallMuteButtonModern"), color: imageColor)
+                        : generateTintedImage(image: UIImage(bundleImageName: "Call/CallMuteButton"), color: imageColor)
+                case let .flipCamera(isModern):
+                    image = isModern
+                        ? generateTintedImage(image: UIImage(bundleImageName: "Call/CallSwitchCameraButtonModern"), color: imageColor)
+                        : generateTintedImage(image: UIImage(bundleImageName: "Call/CallSwitchCameraButton"), color: imageColor)
+                case let .bluetooth(isModern):
+                    image = isModern
+                        ? generateTintedImage(image: UIImage(bundleImageName: "Call/CallBluetoothButtonModern"), color: imageColor)
+                        : generateTintedImage(image: UIImage(bundleImageName: "Call/CallBluetoothButton"), color: imageColor)
+                case let .speaker(isModern):
+                    image = isModern
+                        ? generateTintedImage(image: UIImage(bundleImageName: "Call/CallSpeakerButtonModern"), color: imageColor)
+                        : generateTintedImage(image: UIImage(bundleImageName: "Call/CallSpeakerButton"), color: imageColor)
+                case let .airpods(isModern):
+                    image = isModern
+                        ? generateTintedImage(image: UIImage(bundleImageName: "Call/CallAirpodsButtonModern"), color: imageColor)
+                        : generateTintedImage(image: UIImage(bundleImageName: "Call/CallAirpodsButton"), color: imageColor)
+                case let .airpodsPro(isModern):
+                    image = isModern
+                        ? generateTintedImage(image: UIImage(bundleImageName: "Call/CallAirpodsProButtonModern"), color: imageColor)
+                        : generateTintedImage(image: UIImage(bundleImageName: "Call/CallAirpodsProButton"), color: imageColor)
+                case let .airpodsMax(isModern):
+                    image = isModern
+                        ? generateTintedImage(image: UIImage(bundleImageName: "Call/CallAirpodsMaxButtonModern"), color: imageColor)
+                        : generateTintedImage(image: UIImage(bundleImageName: "Call/CallAirpodsMaxButton"), color: imageColor)
                 case .headphones:
                     image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallHeadphonesButton"), color: imageColor)
                 case .accept:
                     image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallAcceptButton"), color: imageColor)
-                case .end:
-                    image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallDeclineButton"), color: imageColor)
+                case let .end(isDecline):
+                    image = isDecline
+                        ? generateTintedImage(image: UIImage(bundleImageName: "Call/CallDeclineButton"), color: imageColor)
+                        : generateTintedImage(image: UIImage(bundleImageName: "Call/CallCancelButtonModern"), color: imageColor)
                 case .cancel:
                     image = generateImage(CGSize(width: 28.0, height: 28.0), opaque: false, rotatedContext: { size, context in
                         let bounds = CGRect(origin: CGPoint(), size: size)
@@ -330,7 +365,14 @@ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
                 self.contentBackgroundNode.image = contentBackgroundImage
             }
             
-            if transition.isAnimated, let previousContent = previousContent, previousContent.image == .accept && content.image == .end {
+            let isEndContentImage: Bool = {
+                if case .end = content.image {
+                    return true
+                }
+                return false
+            }()
+            
+            if transition.isAnimated, let previousContent = previousContent, previousContent.image == .accept && isEndContentImage {
                 let rotation = CGFloat.pi / 4.0 * 3.0
                 
                 if let snapshotView = self.contentNode.view.snapshotContentTree() {

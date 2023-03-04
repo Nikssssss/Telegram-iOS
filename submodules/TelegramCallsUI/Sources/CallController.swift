@@ -31,11 +31,13 @@ protocol CallControllerNodeProtocol: AnyObject {
     
     func updateAudioOutputs(availableOutputs: [AudioSessionOutput], currentOutput: AudioSessionOutput?)
     func updateCallState(_ callState: PresentationCallState)
+    func updateAudioLevel(_ audioLevel: Float)
     func updatePeer(accountPeer: Peer, peer: Peer, hasOther: Bool)
     
     func animateIn()
     func animateOut(completion: @escaping () -> Void)
     func expandFromPipIfPossible()
+    func presentCallRating(applyRating: @escaping (Int) -> Void, completion: @escaping () -> Void)
     
     func containerLayoutUpdated(_ layout: ContainerViewLayout, navigationBarHeight: CGFloat, transition: ContainedViewLayoutTransition)
 }
@@ -50,6 +52,8 @@ public final class CallController: ViewController {
         return self._ready
     }
     
+    public var currentCallState: PresentationCallState.State?
+    
     private let sharedContext: SharedAccountContext
     private let account: Account
     public let call: PresentationCall
@@ -62,6 +66,7 @@ public final class CallController: ViewController {
     
     private var peerDisposable: Disposable?
     private var disposable: Disposable?
+    private var audioLevelDisposable: Disposable?
     
     private var callMutedDisposable: Disposable?
     private var isMuted = false
@@ -92,7 +97,13 @@ public final class CallController: ViewController {
         
         self.disposable = (call.state
         |> deliverOnMainQueue).start(next: { [weak self] callState in
+            self?.currentCallState = callState.state
             self?.callStateUpdated(callState)
+        })
+        
+        self.audioLevelDisposable = (call.audioLevel
+        |> deliverOnMainQueue).start(next: { [weak self] audioLevel in
+            self?.audioLevelUpdated(audioLevel)
         })
         
         self.callMutedDisposable = (call.isMuted
@@ -123,6 +134,7 @@ public final class CallController: ViewController {
     deinit {
         self.peerDisposable?.dispose()
         self.disposable?.dispose()
+        self.audioLevelDisposable?.dispose()
         self.callMutedDisposable?.dispose()
         self.audioOutputStateDisposable?.dispose()
         self.idleTimerExtensionDisposable.dispose()
@@ -131,6 +143,12 @@ public final class CallController: ViewController {
     private func callStateUpdated(_ callState: PresentationCallState) {
         if self.isNodeLoaded {
             self.controllerNode.updateCallState(callState)
+        }
+    }
+    
+    private func audioLevelUpdated(_ audioLevel: Float) {
+        if self.isNodeLoaded {
+            self.controllerNode.updateAudioLevel(audioLevel)
         }
     }
     
@@ -360,5 +378,21 @@ public final class CallController: ViewController {
     
     public func expandFromPipIfPossible() {
         self.controllerNode.expandFromPipIfPossible()
+    }
+    
+    public func presentCallRating(callId: CallId, completion: @escaping () -> Void) {
+        if self.controllerNode is CallControllerNode {
+            self.controllerNode.presentCallRating(applyRating: { [weak self] rating in
+                guard let self = self else { return }
+                
+                if rating < 4 {
+                    self.push(callFeedbackController(sharedContext: self.sharedContext, account: self.account, callId: callId, rating: rating, userInitiated: false, isVideo: self.call.isVideo))
+                } else {
+                    let _ = rateCallAndSendLogs(engine: TelegramEngine(account: self.account), callId: callId, starsCount: rating, comment: "", userInitiated: false, includeLogs: false).start()
+                }
+            }, completion: completion)
+        } else {
+            completion()
+        }
     }
 }

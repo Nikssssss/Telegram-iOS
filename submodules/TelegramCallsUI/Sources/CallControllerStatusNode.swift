@@ -6,9 +6,11 @@ import SwiftSignalKit
 
 private let compactNameFont = Font.regular(28.0)
 private let regularNameFont = Font.regular(36.0)
+private let modernNameFont = Font.regular(28)
 
 private let compactStatusFont = Font.regular(18.0)
 private let regularStatusFont = Font.regular(18.0)
+private let modernStatusFont = Font.regular(16)
 
 enum CallControllerStatusValue: Equatable {
     case text(string: String, displayLogo: Bool)
@@ -43,6 +45,8 @@ final class CallControllerStatusNode: ASDisplayNode {
     private let titleActivateAreaNode: AccessibilityAreaNode
     private let statusActivateAreaNode: AccessibilityAreaNode
     
+    private var isModernAppearance = false
+    
     var title: String = ""
     var subtitle: String = ""
     var status: CallControllerStatusValue = .text(string: "", displayLogo: false) {
@@ -68,13 +72,13 @@ final class CallControllerStatusNode: ASDisplayNode {
                 if case .timer = self.status {
                     self.statusTimer = SwiftSignalKit.Timer(timeout: 0.5, repeat: true, completion: { [weak self] in
                         if let strongSelf = self, let validLayoutWidth = strongSelf.validLayoutWidth {
-                            let _ = strongSelf.updateLayout(constrainedWidth: validLayoutWidth, transition: .immediate)
+                            let _ = strongSelf.updateLayout(constrainedWidth: validLayoutWidth, transition: .immediate, isModernAppearance: strongSelf.isModernAppearance)
                         }
                     }, queue: Queue.mainQueue())
                     self.statusTimer?.start()
                 } else {
                     if let validLayoutWidth = self.validLayoutWidth {
-                        let _ = self.updateLayout(constrainedWidth: validLayoutWidth, transition: .immediate)
+                        let _ = self.updateLayout(constrainedWidth: validLayoutWidth, transition: .immediate, isModernAppearance: isModernAppearance)
                     }
                 }
             }
@@ -97,7 +101,7 @@ final class CallControllerStatusNode: ASDisplayNode {
                 
                 if (oldValue == nil) != (self.reception != nil) {
                     if let validLayoutWidth = self.validLayoutWidth {
-                        let _ = self.updateLayout(constrainedWidth: validLayoutWidth, transition: .immediate)
+                        let _ = self.updateLayout(constrainedWidth: validLayoutWidth, transition: .immediate, isModernAppearance: isModernAppearance)
                     }
                 }
             }
@@ -151,17 +155,23 @@ final class CallControllerStatusNode: ASDisplayNode {
         transition.updateAlpha(node: self.statusContainerNode, alpha: alpha)
     }
     
-    func updateLayout(constrainedWidth: CGFloat, transition: ContainedViewLayoutTransition) -> CGFloat {
+    func updateLayout(constrainedWidth: CGFloat, transition: ContainedViewLayoutTransition, isModernAppearance: Bool) -> CGFloat {
         self.validLayoutWidth = constrainedWidth
+        self.isModernAppearance = isModernAppearance
         
         let nameFont: UIFont
         let statusFont: UIFont
-        if constrainedWidth < 330.0 {
-            nameFont = compactNameFont
-            statusFont = compactStatusFont
+        if isModernAppearance {
+            nameFont = modernNameFont
+            statusFont = modernStatusFont
         } else {
-            nameFont = regularNameFont
-            statusFont = regularStatusFont
+            if constrainedWidth < 330.0 {
+                nameFont = compactNameFont
+                statusFont = compactStatusFont
+            } else {
+                nameFont = regularNameFont
+                statusFont = regularStatusFont
+            }
         }
         
         var statusOffset: CGFloat = 0.0
@@ -190,14 +200,22 @@ final class CallControllerStatusNode: ASDisplayNode {
             statusText = format(durationString, false)
             statusMeasureText = format(measureDurationString, true)
             if self.reception != nil {
-                statusOffset += 8.0
+                statusOffset += isModernAppearance ? 6 : 8.0
             }
         }
         
-        let spacing: CGFloat = 1.0
-        let (titleLayout, titleApply) = TextNode.asyncLayout(self.titleNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: self.title, font: nameFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets(top: 2.0, left: 2.0, bottom: 2.0, right: 2.0)))
-        let (statusMeasureLayout, statusMeasureApply) = TextNode.asyncLayout(self.statusMeasureNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: statusMeasureText, font: statusFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 0, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .center, cutout: nil, insets: UIEdgeInsets(top: 2.0, left: 2.0, bottom: 2.0, right: 2.0)))
-        let (statusLayout, statusApply) = TextNode.asyncLayout(self.statusNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: statusText, font: statusFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 0, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .center, cutout: nil, insets: UIEdgeInsets(top: 2.0, left: 2.0, bottom: 2.0, right: 2.0)))
+        let titleEdgeInsets: UIEdgeInsets = isModernAppearance
+            ? UIEdgeInsets(top: 0, left: 2, bottom: 0, right: 2)
+            : UIEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
+        
+        let statusEdgeInsets: UIEdgeInsets = isModernAppearance
+            ? .zero
+            : UIEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
+        
+        let spacing: CGFloat = isModernAppearance ? 3 : 1.0
+        let (titleLayout, titleApply) = TextNode.asyncLayout(self.titleNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: self.title, font: nameFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: titleEdgeInsets))
+        let (statusMeasureLayout, statusMeasureApply) = TextNode.asyncLayout(self.statusMeasureNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: statusMeasureText, font: statusFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 0, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .center, cutout: nil, insets: statusEdgeInsets))
+        let (statusLayout, statusApply) = TextNode.asyncLayout(self.statusNode)(TextNodeLayoutArguments(attributedString: NSAttributedString(string: statusText, font: statusFont, textColor: .white), backgroundColor: nil, maximumNumberOfLines: 0, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth - 20.0, height: CGFloat.greatestFiniteMagnitude), alignment: .center, cutout: nil, insets: statusEdgeInsets))
         
         let _ = titleApply()
         let _ = statusApply()
@@ -206,10 +224,12 @@ final class CallControllerStatusNode: ASDisplayNode {
         self.titleActivateAreaNode.accessibilityLabel = self.title
         self.statusActivateAreaNode.accessibilityLabel = statusText
         
+        let receptionY: CGFloat = isModernAppearance ? 5 : 9
+        
         self.titleNode.frame = CGRect(origin: CGPoint(x: floor((constrainedWidth - titleLayout.size.width) / 2.0), y: 0.0), size: titleLayout.size)
         self.statusContainerNode.frame = CGRect(origin: CGPoint(x: 0.0, y: titleLayout.size.height + spacing), size: CGSize(width: constrainedWidth, height: statusLayout.size.height))
         self.statusNode.frame = CGRect(origin: CGPoint(x: floor((constrainedWidth - statusMeasureLayout.size.width) / 2.0) + statusOffset, y: 0.0), size: statusLayout.size)
-        self.receptionNode.frame = CGRect(origin: CGPoint(x: self.statusNode.frame.minX - receptionNodeSize.width, y: 9.0), size: receptionNodeSize)
+        self.receptionNode.frame = CGRect(origin: CGPoint(x: self.statusNode.frame.minX - receptionNodeSize.width, y: receptionY), size: receptionNodeSize)
         self.logoNode.isHidden = !statusDisplayLogo
         if let image = self.logoNode.image, let firstLineRect = statusMeasureLayout.linesRects().first {
             let firstLineOffset = floor((statusMeasureLayout.size.width - firstLineRect.width) / 2.0)

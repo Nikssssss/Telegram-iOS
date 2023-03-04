@@ -271,10 +271,16 @@ public final class GradientBackgroundNode: ASDisplayNode {
     
     private var patternOverlayLayer: GradientBackgroundPatternOverlayLayer?
     
-    public init(colors: [UIColor]? = nil, useSharedAnimationPhase: Bool = false, adjustSaturation: Bool = true) {
+    private let useKeyframeAnimation: Bool
+    
+    private var loopAnimationTimer: Foundation.Timer?
+    private var isLoopAnimationInProgress = false
+    
+    public init(colors: [UIColor]? = nil, useSharedAnimationPhase: Bool = false, adjustSaturation: Bool = true, useKeyframeAnimation: Bool = true) {
         self.useSharedAnimationPhase = useSharedAnimationPhase
         self.saturation = adjustSaturation ? 1.7 : 1.0
         self.contentView = UIImageView()
+        self.useKeyframeAnimation = useKeyframeAnimation
         let defaultColors: [UIColor] = [
             UIColor(rgb: 0x7FA381),
             UIColor(rgb: 0xFFF5C5),
@@ -405,22 +411,41 @@ public final class GradientBackgroundNode: ASDisplayNode {
                     }
 
                     self.dimmedImageParams = (imageSize, self.colors, gatherPositions(shiftArray(array: GradientBackgroundNode.basePositions, offset: self.phase % 8)))
+                    
+                    let previousImage = self.contentView.image
 
                     self.contentView.image = images[images.count - 1].0
                     self.backgroundImageHash = images[images.count - 1].1
-
-                    let animation = CAKeyframeAnimation(keyPath: "contents")
-                    animation.values = images.map { $0.0.cgImage! }
-                    animation.duration = duration * UIView.animationDurationFactor()
-                    if backwards || extendAnimation {
-                        animation.calculationMode = .discrete
+                    
+                    let animation: CAAnimation
+                    if useKeyframeAnimation {
+                        let keyFrameAnimation = CAKeyframeAnimation(keyPath: "contents")
+                        keyFrameAnimation.values = images.map { $0.0.cgImage! }
+                        keyFrameAnimation.duration = duration * UIView.animationDurationFactor()
+                        if backwards || extendAnimation {
+                            keyFrameAnimation.calculationMode = .discrete
+                        } else {
+                            keyFrameAnimation.calculationMode = .linear
+                        }
+                        keyFrameAnimation.isRemovedOnCompletion = true
+                        if extendAnimation && !backwards {
+                            keyFrameAnimation.fillMode = .backwards
+                            keyFrameAnimation.beginTime = self.contentView.layer.convertTime(CACurrentMediaTime(), from: nil) + 0.25
+                        }
+                        
+                        animation = keyFrameAnimation
                     } else {
-                        animation.calculationMode = .linear
-                    }
-                    animation.isRemovedOnCompletion = true
-                    if extendAnimation && !backwards {
-                        animation.fillMode = .backwards
-                        animation.beginTime = self.contentView.layer.convertTime(CACurrentMediaTime(), from: nil) + 0.25
+                        let basicAnimation = CABasicAnimation(keyPath: "contents")
+                        basicAnimation.fromValue = previousImage
+                        basicAnimation.toValue = images[images.count - 1].0
+                        basicAnimation.duration = duration * UIView.animationDurationFactor()
+                        basicAnimation.isRemovedOnCompletion = true
+                        if extendAnimation && !backwards {
+                            basicAnimation.fillMode = .backwards
+                            basicAnimation.beginTime = self.contentView.layer.convertTime(CACurrentMediaTime(), from: nil) + 0.25
+                        }
+                        
+                        animation = basicAnimation
                     }
 
                     
@@ -446,7 +471,11 @@ public final class GradientBackgroundNode: ASDisplayNode {
                         let cloneAnimation = CAKeyframeAnimation(keyPath: "contents")
                         cloneAnimation.values = dimmedImages.map { $0.cgImage! }
                         cloneAnimation.duration = animation.duration
-                        cloneAnimation.calculationMode = animation.calculationMode
+                        if backwards || extendAnimation {
+                            cloneAnimation.calculationMode = .discrete
+                        } else {
+                            cloneAnimation.calculationMode = .linear
+                        }
                         cloneAnimation.isRemovedOnCompletion = animation.isRemovedOnCompletion
                         cloneAnimation.fillMode = animation.fillMode
                         cloneAnimation.beginTime = animation.beginTime
@@ -537,8 +566,17 @@ public final class GradientBackgroundNode: ASDisplayNode {
         if updated {
             self.colors = colors
             self.invalidated = true
+            
+            let transition: ContainedViewLayoutTransition = isLoopAnimationInProgress
+                ? .animated(duration: 0.5, curve: .spring)
+                : .immediate
+            
             if let size = self.validLayout {
-                self.updateLayout(size: size, transition: .immediate, extendAnimation: false, backwards: false, completion: {})
+                if isLoopAnimationInProgress {
+                    self.animateEvent(transition: transition, extendAnimation: false, backwards: false, completion: {})
+                } else {
+                    self.updateLayout(size: size, transition: transition, extendAnimation: false, backwards: false, completion: {})
+                }
             }
         }
     }
@@ -566,5 +604,21 @@ public final class GradientBackgroundNode: ASDisplayNode {
         } else {
             completion()
         }
+    }
+    
+    public func startLoopAnimation() {
+        guard !isLoopAnimationInProgress else { return }
+        
+        isLoopAnimationInProgress = true
+        
+        loopAnimationTimer = Timer.scheduledTimer(withTimeInterval: 0.5 * UIView.animationDurationFactor(), repeats: true) { [weak self] _ in
+            self?.animateEvent(transition: .animated(duration: 0.5, curve: .spring), extendAnimation: false, backwards: false, completion: {})
+        }
+    }
+    
+    public func stopLoopAnimation() {
+        loopAnimationTimer?.invalidate()
+        loopAnimationTimer = nil
+        isLoopAnimationInProgress = false
     }
 }

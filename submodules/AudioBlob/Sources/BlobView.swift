@@ -188,11 +188,13 @@ public final class VoiceBlobView: UIView, TGModernConversationInputMicButtonDeco
         self.stopAnimating(duration: 0.15)
     }
     
-    public func stopAnimating(duration: Double) {
+    public func stopAnimating(duration: Double, completion: (() -> Void)? = nil) {
         guard isAnimating else { return }
         isAnimating = false
         
-        mediumBlob.layer.animateScale(from: 1.0, to: 0.75, duration: duration, removeOnCompletion: false)
+        mediumBlob.layer.animateScale(from: 1.0, to: 0.75, duration: duration, removeOnCompletion: false, completion: { _ in
+            completion?()
+        })
         bigBlob.layer.animateScale(from: 1.0, to: 0.75, duration: duration, removeOnCompletion: false)
         
         updateBlobsState()

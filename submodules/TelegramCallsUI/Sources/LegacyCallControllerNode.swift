@@ -312,6 +312,12 @@ final class LegacyCallControllerNode: ASDisplayNode, CallControllerNodeProtocol 
         }
     }
     
+    func updateAudioLevel(_ audioLevel: Float) {
+    }
+    
+    func presentCallRating(applyRating: @escaping (Int) -> Void, completion: @escaping () -> Void) {
+    }
+    
     private func updateButtonsMode() {
         guard let callState = self.callState else {
             return

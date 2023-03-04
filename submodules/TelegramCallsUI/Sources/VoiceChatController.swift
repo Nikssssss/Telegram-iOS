@@ -4220,9 +4220,9 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             var soundTitle: String = self.presentationData.strings.Call_Speaker
             switch audioMode {
             case .none, .builtin:
-                soundImage = .speaker
+                soundImage = .speaker(isModern: false)
             case .speaker:
-                soundImage = .speaker
+                soundImage = .speaker(isModern: false)
                 soundAppearance = activeButtonAppearance
             case .headphones:
                 soundImage = .headphones
@@ -4230,13 +4230,13 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             case let .bluetooth(type):
                 switch type {
                 case .generic:
-                    soundImage = .bluetooth
+                    soundImage = .bluetooth(isModern: false)
                 case .airpods:
-                    soundImage = .airpods
+                    soundImage = .airpods(isModern: false)
                 case .airpodsPro:
-                    soundImage = .airpodsPro
+                    soundImage = .airpodsPro(isModern: false)
                 case .airpodsMax:
-                    soundImage = .airpodsMax
+                    soundImage = .airpodsMax(isModern: false)
                 }
                 soundTitle = self.presentationData.strings.Call_Audio
             }
@@ -4279,7 +4279,7 @@ public final class VoiceChatControllerImpl: ViewController, VoiceChatController 
             
             self.cameraButton.update(size: sideButtonSize, content: CallControllerButtonItemNode.Content(appearance: hasVideo ? activeButtonAppearance : normalButtonAppearance, image: hasVideo ? .cameraOn : .cameraOff), text: self.presentationData.strings.VoiceChat_Video, transition: transition)
             
-            self.switchCameraButton.update(size: audioButtonSize, content: CallControllerButtonItemNode.Content(appearance: normalButtonAppearance, image: .flipCamera), text: "", transition: transition)
+            self.switchCameraButton.update(size: audioButtonSize, content: CallControllerButtonItemNode.Content(appearance: normalButtonAppearance, image: .flipCamera(isModern: false)), text: "", transition: transition)
                     
             transition.updateAlpha(node: self.switchCameraButton, alpha: hasCameraButton && hasVideo ? 1.0 : 0.0)
             transition.updateTransformScale(node: self.switchCameraButton, scale: hasCameraButton && hasVideo ? 1.0 : 0.0)

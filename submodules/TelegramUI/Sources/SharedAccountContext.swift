@@ -663,23 +663,36 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             |> deliverOnMainQueue).start(next: { [weak self] call in
                 if let strongSelf = self {
                     if call !== strongSelf.callController?.call {
-                        strongSelf.callController?.dismiss()
-                        strongSelf.callController = nil
-                        strongSelf.hasOngoingCall.set(false)
-                        
-                        if let call = call {
-                            mainWindow.hostView.containerView.endEditing(true)
-                            let callController = CallController(sharedContext: strongSelf, account: call.context.account, call: call, easyDebugAccess: !GlobalExperimentalSettings.isAppStoreBuild)
-                            strongSelf.callController = callController
-                            strongSelf.mainWindow?.present(callController, on: .calls)
-                            strongSelf.callState.set(call.state
-                            |> map(Optional.init))
-                            strongSelf.hasOngoingCall.set(true)
-                            setNotificationCall(call)
-                        } else {
-                            strongSelf.callState.set(.single(nil))
+                        let completion: () -> Void = {
+                            strongSelf.callController?.dismiss()
+                            strongSelf.callController = nil
                             strongSelf.hasOngoingCall.set(false)
-                            setNotificationCall(nil)
+                            
+                            if let call = call {
+                                mainWindow.hostView.containerView.endEditing(true)
+                                let callController = CallController(sharedContext: strongSelf, account: call.context.account, call: call, easyDebugAccess: !GlobalExperimentalSettings.isAppStoreBuild)
+                                strongSelf.callController = callController
+                                strongSelf.mainWindow?.present(callController, on: .calls)
+                                strongSelf.callState.set(call.state
+                                                         |> map(Optional.init))
+                                strongSelf.hasOngoingCall.set(true)
+                                setNotificationCall(call)
+                            } else {
+                                strongSelf.callState.set(.single(nil))
+                                strongSelf.hasOngoingCall.set(false)
+                                setNotificationCall(nil)
+                            }
+                        }
+                        
+                        if case let .terminated(callId, _, shouldPresentRating) = strongSelf.callController?.currentCallState,
+                           let callId = callId {
+                            if shouldPresentRating {
+                                strongSelf.callController?.presentCallRating(callId: callId, completion: completion)
+                            } else {
+                                completion()
+                            }
+                        } else {
+                            completion()
                         }
                     }
                 }

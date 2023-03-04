@@ -17,19 +17,16 @@ private final class ContextMenuContainerMaskView: UIView {
 public final class ContextMenuContainerNode: ASDisplayNode {
     private var cachedMaskParams: CachedMaskParams?
     private let maskView = ContextMenuContainerMaskView()
+    private let customCornerRadius: CGFloat
     
     public var relativeArrowPosition: (CGFloat, Bool)?
     
-    //private let effectView: UIVisualEffectView
-    
-    override public init() {
-        //self.effectView = UIVisualEffectView(effect: UIBlurEffect(style: .light))
+    public init(cornerRadius: CGFloat = 10) {
+        self.customCornerRadius = cornerRadius
         
         super.init()
         
         self.backgroundColor = UIColor(rgb: 0x8c8e8e)
-        //self.view.addSubview(self.effectView)
-        //self.effectView.mask = self.maskView
         self.view.mask = self.maskView
     }
     
@@ -51,7 +48,7 @@ public final class ContextMenuContainerNode: ASDisplayNode {
         let maskParams = CachedMaskParams(size: self.bounds.size, relativeArrowPosition: self.relativeArrowPosition?.0 ?? self.bounds.size.width / 2.0, arrowOnBottom: self.relativeArrowPosition?.1 ?? true)
         if self.cachedMaskParams != maskParams {
             let path = UIBezierPath()
-            let cornerRadius: CGFloat = 10.0
+            let cornerRadius = customCornerRadius
             let verticalInset: CGFloat = 9.0
             let arrowWidth: CGFloat = 18.0
             let requestedArrowPosition = maskParams.relativeArrowPosition
