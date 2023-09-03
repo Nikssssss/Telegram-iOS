@@ -20,6 +20,7 @@ import ComponentFlow
 import ChatFolderLinkPreviewScreen
 import ChatListHeaderComponent
 import StoryPeerListComponent
+import AnimationUI
 
 public enum ChatListContainerNodeFilter: Equatable {
     case all
@@ -190,7 +191,7 @@ private final class ChatListShimmerNode: ASDisplayNode {
             let timestamp1: Int32 = 100000
             let peers: [EnginePeer.Id: EnginePeer] = [:]
             let interaction = ChatListNodeInteraction(context: context, animationCache: animationCache, animationRenderer: animationRenderer, activateSearch: {}, peerSelected: { _, _, _, _ in }, disabledPeerSelected: { _, _ in }, togglePeerSelected: { _, _ in }, togglePeersSelection: { _, _ in }, additionalCategorySelected: { _ in
-            }, messageSelected: { _, _, _, _ in}, groupSelected: { _ in }, addContact: { _ in }, setPeerIdWithRevealedOptions: { _, _ in }, setItemPinned: { _, _ in }, setPeerMuted: { _, _ in }, setPeerThreadMuted: { _, _, _ in }, deletePeer: { _, _ in }, deletePeerThread: { _, _ in }, setPeerThreadStopped: { _, _, _ in }, setPeerThreadPinned: { _, _, _ in }, setPeerThreadHidden: { _, _, _ in }, updatePeerGrouping: { _, _ in }, togglePeerMarkedUnread: { _, _ in}, toggleArchivedFolderHiddenByDefault: {}, toggleThreadsSelection: { _, _ in }, hidePsa: { _ in }, activateChatPreview: { _, _, _, gesture, _ in
+            }, messageSelected: { _, _, _, _ in}, groupSelected: { _ in }, addContact: { _ in }, setPeerIdWithRevealedOptions: { _, _ in }, setItemPinned: { _, _ in }, setPeerMuted: { _, _ in }, setPeerThreadMuted: { _, _, _ in }, deletePeer: { _, _ in }, deletePeerThread: { _, _ in }, setPeerThreadStopped: { _, _, _ in }, setPeerThreadPinned: { _, _, _ in }, setPeerThreadHidden: { _, _, _ in }, updatePeerGrouping: { _, _ in }, togglePeerMarkedUnread: { _, _ in}, toggleArchivedFolderHiddenByDefault: {}, toggleThreadsSelection: { _, _ in }, hidePsa: { _ in }, activateChatPreview: { _, _, _, gesture, _, _ in
                 gesture?.cancel()
             }, present: { _ in }, openForumThread: { _, _ in }, openStorageManagement: {}, openPasswordSetup: {}, openPremiumIntro: {}, openChatFolderUpdates: {}, hideChatFolderUpdates: {}, openStories: { _, _ in })
             interaction.isInlineMode = isInlineMode
@@ -1038,8 +1039,8 @@ public final class ChatListContainerNode: ASDisplayNode, UIGestureRecognizerDele
             
             //return false
         }
-        itemNode.listNode.activateChatPreview = { [weak self] item, threadId, sourceNode, gesture, location in
-            self?.activateChatPreview?(item, threadId, sourceNode, gesture, location)
+        itemNode.listNode.activateChatPreview = { [weak self] item, threadId, sourceNode, gesture, location, animationNode in
+            self?.activateChatPreview?(item, threadId, sourceNode, gesture, location, animationNode)
         }
         itemNode.listNode.openStories = { [weak self] subject, itemNode in
             self?.openStories?(subject, itemNode)
@@ -1116,7 +1117,7 @@ public final class ChatListContainerNode: ASDisplayNode, UIGestureRecognizerDele
     var didBeginInteractiveDragging: ((ListView) -> Void)?
     var endedInteractiveDragging: ((ListView) -> Void)?
     var shouldStopScrolling: ((ListView, CGFloat) -> Bool)?
-    var activateChatPreview: ((ChatListItem, Int64?, ASDisplayNode, ContextGesture?, CGPoint?) -> Void)?
+    var activateChatPreview: ((ChatListItem, Int64?, ASDisplayNode, ContextGesture?, CGPoint?, (UIView, CGRect, UIView, CGRect, UIView, Bool, () -> Void, () -> Void, () -> Void, () -> Void)?) -> Void)?
     var openStories: ((ChatListNode.OpenStoriesSubject, ASDisplayNode?) -> Void)?
     var addedVisibleChatsWithPeerIds: (([EnginePeer.Id]) -> Void)?
     var didBeginSelectingChats: (() -> Void)?
@@ -1723,6 +1724,7 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
     private let animationRenderer: MultiAnimationRenderer
     
     let mainContainerNode: ChatListContainerNode
+    private var archiveHintNode: ChatListArchiveHintNode?
     
     var effectiveContainerNode: ChatListContainerNode {
         if let inlineStackContainerNode = self.inlineStackContainerNode {
@@ -1780,6 +1782,27 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
     var cancelEditing: (() -> Void)?
 
     let debugListView = ListView()
+    
+    private var listContentOffset: CGFloat = 0
+    private var shouldDismissArchiveHint = false
+    private var minContentOffsetToReleaseAcrchiveHint: CGFloat {
+        if let controller = self.controller,
+           let storySubscriptions = controller.orderedStorySubscriptions,
+           shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
+            return -210
+        } else {
+            return -80
+        }
+    }
+    
+    private var isNotForum: Bool {
+        switch location {
+        case .chatList:
+            return true
+        case .forum:
+            return false
+        }
+    }
     
     init(context: AccountContext, location: ChatListControllerLocation, previewing: Bool, controlsHistoryPreload: Bool, presentationData: PresentationData, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, controller: ChatListControllerImpl) {
         self.context = context
@@ -2098,12 +2121,35 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         }
     }
     
-    private func updateNavigationScrolling(navigationHeight: CGFloat, transition: ContainedViewLayoutTransition) {
+    @discardableResult
+    private func updateNavigationScrolling(navigationHeight: CGFloat, transition: ContainedViewLayoutTransition) -> CGFloat {
         var mainOffset: CGFloat
         if let contentOffset = self.mainContainerNode.contentOffset, case let .known(value) = contentOffset {
             mainOffset = value
         } else {
             mainOffset = navigationHeight
+        }
+        
+        if self.isNotForum, self.mainContainerNode.currentItemNode.hasItemsToBeRevealed() || self.archiveHintNode?.supernode != nil, mainOffset < 0 {
+            if let controller = self.controller,
+               let storySubscriptions = controller.orderedStorySubscriptions,
+               shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
+                if mainOffset < -83 {
+                    let a: CGFloat = -83
+                    let b: CGFloat = -250
+                    let c: CGFloat = 0
+                    let d: CGFloat = 1
+                    
+                    if mainOffset > (a + b) / 2 {
+                        let multiplier = c + ((d - c) / (b - a)) * (mainOffset - a)
+                        mainOffset = -83 + ((mainOffset - -83) * (d - multiplier))
+                    } else {
+                        mainOffset = -83 + (((a + b) / 2) - -83) * 0.5
+                    }
+                }
+            } else {
+                mainOffset = max(0, mainOffset)
+            }
         }
         
         self.mainContainerNode.updateScrollingOffset(navigationHeight: navigationHeight, offset: mainOffset, transition: transition)
@@ -2159,6 +2205,8 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
             mainDelta = 0.0
         }
         transition.updateSublayerTransformOffset(layer: self.mainContainerNode.layer, offset: CGPoint(x: 0.0, y: -mainDelta))
+        
+        return offset
     }
     
     func requestNavigationBarLayout(transition: Transition) {
@@ -2310,7 +2358,50 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
             }
         }
         
-        self.updateNavigationScrolling(navigationHeight: navigationBarLayout.navigationHeight, transition: transition)
+        let navigationOffset = self.updateNavigationScrolling(navigationHeight: navigationBarLayout.navigationHeight, transition: transition)
+        
+        let contentOffsetToRevealArchive: CGFloat
+        if let controller = self.controller,
+           let storySubscriptions = controller.orderedStorySubscriptions,
+           shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
+            contentOffsetToRevealArchive = -83
+        } else {
+            contentOffsetToRevealArchive = 0
+        }
+        
+        if self.listContentOffset >= contentOffsetToRevealArchive, let archiveHintNode, archiveHintNode.supernode != nil, self.mainContainerNode.currentItemNode.hasItemsToBeRevealed(), self.isNotForum {
+            transition.updateFrame(node: archiveHintNode, frame: CGRect(x: layout.safeInsets.left, y: navigationBarHeight - navigationOffset, width: self.frame.width - layout.safeInsets.right - layout.safeInsets.left, height: 0))
+        }
+        
+        if self.mainContainerNode.currentItemNode.hasItemsToBeRevealed(), self.listContentOffset < contentOffsetToRevealArchive, self.isNotForum {
+            if self.archiveHintNode == nil {
+                self.archiveHintNode = ChatListArchiveHintNode(presentationData: self.presentationData)
+            }
+            
+            guard let archiveHintNode else { return }
+            
+            if archiveHintNode.supernode == nil {
+                self.addSubnode(archiveHintNode)
+            }
+
+            let height = self.listContentOffset < 0 ? abs(self.listContentOffset) : 0
+            transition.updateFrame(node: archiveHintNode, frame: CGRect(x: layout.safeInsets.left, y: navigationBarHeight - navigationOffset, width: self.frame.width - layout.safeInsets.right - layout.safeInsets.left, height: height + navigationOffset))
+
+            let state: ChatListArchiveHintNode.State = height > abs(self.minContentOffsetToReleaseAcrchiveHint) ? .release : .swipe
+            archiveHintNode.updateLayout(transition: transition, constrainedSize: layout.size, state: state)
+        } else if self.shouldDismissArchiveHint {
+            guard let archiveHintNode else { return }
+        
+            let height = self.listContentOffset < 0 ? abs(self.listContentOffset) : 0
+            transition.updateFrame(node: archiveHintNode, frame: CGRect(x: layout.safeInsets.left, y: navigationBarHeight - navigationOffset, width: self.frame.width - layout.safeInsets.right - layout.safeInsets.left, height: height + navigationOffset))
+            
+            self.shouldDismissArchiveHint = false
+            self.archiveHintNode?.updateLayout(transition: transition, constrainedSize: layout.size, state: .dismiss)
+        }
+        
+        if let archiveHintNode, self.isNotForum {
+            transition.updateFrame(node: archiveHintNode, frame: CGRect(x: layout.safeInsets.left, y: navigationBarHeight - navigationOffset, width: self.frame.width - layout.safeInsets.right - layout.safeInsets.left, height: archiveHintNode.frame.height))
+        }
         
         if let navigationBarComponentView = self.navigationBarView.view as? ChatListNavigationBar.View {
             navigationBarComponentView.deferScrollApplication = false
@@ -2425,6 +2516,11 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         }
         self.updateNavigationScrolling(navigationHeight: containerLayout.navigationBarHeight, transition: self.tempNavigationScrollingTransition ?? .immediate)
         
+        if case let .known(value) = offset {
+            self.listContentOffset = value
+            self.containerLayoutUpdated(containerLayout.layout, navigationBarHeight: containerLayout.navigationBarHeight, visualNavigationHeight: containerLayout.visualNavigationHeight, cleanNavigationBarHeight: containerLayout.cleanNavigationBarHeight, storiesInset: containerLayout.storiesInset, transition: .immediate)
+        }
+        
         if listView.isDragging {
             var overscrollSelectedId: EnginePeer.Id?
             var overscrollHiddenChatItemsAllowed = false
@@ -2488,7 +2584,9 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
                                 self.allowOverscrollItemExpansion = false
                                 
                                 if isPrimary {
-                                    self.mainContainerNode.currentItemNode.revealScrollHiddenItem()
+                                    if !self.isNotForum {
+                                        self.mainContainerNode.currentItemNode.revealScrollHiddenItem()
+                                    }
                                 } else {
                                     self.inlineStackContainerNode?.currentItemNode.revealScrollHiddenItem()
                                 }
@@ -2544,6 +2642,17 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         }
         self.allowOverscrollItemExpansion = false
         self.currentOverscrollItemExpansionTimestamp = nil
+        
+        if self.isNotForum, self.listContentOffset < self.minContentOffsetToReleaseAcrchiveHint, self.mainContainerNode.currentItemNode.hasItemsToBeRevealed(), let containerLayout {
+            self.mainContainerNode.currentItemNode.revealScrollHiddenItem()
+            self.shouldDismissArchiveHint = true
+            self.archiveHintNode?.onDismiss = { [weak self] in
+                guard let self else { return }
+                
+                self.archiveHintNode = ChatListArchiveHintNode(presentationData: self.presentationData)
+            }
+            self.containerLayoutUpdated(containerLayout.layout, navigationBarHeight: containerLayout.navigationBarHeight, visualNavigationHeight: containerLayout.visualNavigationHeight, cleanNavigationBarHeight: containerLayout.cleanNavigationBarHeight, storiesInset: containerLayout.storiesInset, transition: .immediate)
+        }
     }
     
     private func contentScrollingEnded(listView: ListView, isPrimary: Bool) -> Bool {
@@ -2720,4 +2829,178 @@ func shouldDisplayStoriesInChatListHeader(storySubscriptions: EngineStorySubscri
         }
     }
     return false
+}
+
+private final class ChatListArchiveHintNode: ASDisplayNode {
+    enum State {
+        case swipe
+        case release
+        case dismiss
+    }
+    
+    var onDismiss: (() -> Void)?
+    
+    private let backgroundNode = ASDisplayNode()
+    private let iconAnimationNode = AnimationNode(animation: "anim_archive_new", colors: ["Arrow 1.Arrow 1.Stroke 1": .red, "Arrow 2.Arrow 2.Stroke 1": .red, "Cap.cap2.Fill 1": .blue, "Cap.cap1.Fill 1": .blue, "Box.box1.Fill 1": .blue])
+    private let barNode = ASDisplayNode()
+    private let textContainerNode = ASDisplayNode()
+    private let swipeTextNode = ImmediateTextNode()
+    private let releaseTextNode = ImmediateTextNode()
+    private let expandableCircleNode = ASDisplayNode()
+    private let backgroundGradientLayer = CAGradientLayer()
+    private let expandableCircleGradientLayer = CAGradientLayer()
+    
+    private var currentState: State?
+    
+    init(presentationData: PresentationData) {
+        super.init()
+                
+        self.addSubnode(self.backgroundNode)
+        self.addSubnode(self.expandableCircleNode)
+        self.addSubnode(self.barNode)
+        self.addSubnode(self.iconAnimationNode)
+        self.addSubnode(self.textContainerNode)
+        
+        self.textContainerNode.addSubnode(self.swipeTextNode)
+        self.textContainerNode.addSubnode(self.releaseTextNode)
+        
+        self.view.clipsToBounds = true
+        self.textContainerNode.clipsToBounds = true
+        
+        self.swipeTextNode.attributedText = NSAttributedString(string: presentationData.strings.ChatList_ArchiveHint_SwipeForArchive, font: Font.medium(17), textColor: .white)
+        self.releaseTextNode.attributedText = NSAttributedString(string: presentationData.strings.ChatList_ArchiveHint_ReleaseForArchive, font: Font.medium(17), textColor: .white)
+        
+        self.releaseTextNode.alpha = 0
+        
+        self.backgroundGradientLayer.colors = [UIColor(red: 95 / 255, green: 102 / 255, blue: 109 / 255, alpha: 1).cgColor, UIColor(red: 135 / 255, green: 135 / 255, blue: 140 / 255, alpha: 1).cgColor]
+        self.backgroundGradientLayer.locations = [0, 1]
+        self.backgroundGradientLayer.startPoint = CGPoint(x: 0.0, y: 0.5)
+        self.backgroundGradientLayer.endPoint = CGPoint(x: 1.0, y: 0.5)
+        self.backgroundNode.layer.addSublayer(self.backgroundGradientLayer)
+        
+        self.barNode.backgroundColor = UIColor(red: 1, green: 1, blue: 1, alpha: 0.25)
+        self.barNode.cornerRadius = 10
+        
+        self.expandableCircleGradientLayer.colors = [UIColor(red: 0, green: 94 / 255, blue: 206 / 255, alpha: 1).cgColor, UIColor(red: 42 / 255, green: 139 / 255, blue: 199 / 255, alpha: 1).cgColor]
+        self.expandableCircleGradientLayer.locations = [0.3, 0.8]
+        self.expandableCircleGradientLayer.startPoint = CGPoint(x: 0.0, y: 0.5)
+        self.expandableCircleGradientLayer.endPoint = CGPoint(x: 1.0, y: 0.5)
+        self.expandableCircleGradientLayer.cornerRadius = 10
+        self.expandableCircleNode.layer.addSublayer(self.expandableCircleGradientLayer)
+        self.expandableCircleNode.cornerRadius = 10
+        
+        self.iconAnimationNode.layer.anchorPoint = CGPoint(x: 0.5, y: 0.57)
+    }
+    
+    func updateLayout(transition: ContainedViewLayoutTransition, constrainedSize: CGSize, state: State) {
+        var animatedTransition: ContainedViewLayoutTransition = .animated(duration: 0.5, curve: .spring)
+        if case .animated = transition {
+            animatedTransition = transition
+        }
+        
+        let iconAnimationNodeLength: CGFloat = 20
+        let iconAnimationNodeVerticalOffset: CGFloat = 10
+        let iconAnimationNodeY = self.frame.height - iconAnimationNodeVerticalOffset - iconAnimationNodeLength
+        let iconAnimationNodeX: CGFloat = 30
+        let iconAnimationNodeMaxX = iconAnimationNodeX + iconAnimationNodeLength
+        
+        transition.updateFrame(node: self.iconAnimationNode, frame: CGRect(x: iconAnimationNodeX - 20, y: iconAnimationNodeY - 22.5, width: iconAnimationNodeLength + 40, height: iconAnimationNodeLength + 40))
+        
+        transition.updateFrame(node: self.barNode, frame: CGRect(x: iconAnimationNodeX, y: iconAnimationNodeVerticalOffset, width: iconAnimationNodeLength, height: iconAnimationNodeY + iconAnimationNodeLength - iconAnimationNodeVerticalOffset - 2.5))
+        
+        let swipeTextLayoutSize = swipeTextNode.updateLayout(constrainedSize)
+        let releaseTextLayoutSize = releaseTextNode.updateLayout(constrainedSize)
+        let textBottomOffset: CGFloat = 9
+        
+        self.iconAnimationNode.setColors(colors: self.animatedIconColors())
+        
+        if self.currentState == nil {
+            self.textContainerNode.frame = CGRect(x: iconAnimationNodeMaxX, y: self.frame.height - textBottomOffset - releaseTextLayoutSize.height, width: self.frame.width - iconAnimationNodeMaxX, height: swipeTextLayoutSize.height)
+            self.swipeTextNode.frame = CGRect(x: (self.frame.width / 2 - swipeTextLayoutSize.width / 2) - iconAnimationNodeMaxX, y: 0, width: swipeTextLayoutSize.width, height: swipeTextLayoutSize.height)
+            self.releaseTextNode.frame = CGRect(x: -releaseTextLayoutSize.width, y: 0, width: releaseTextLayoutSize.width, height: releaseTextLayoutSize.height)
+            self.expandableCircleNode.frame = CGRect(x: iconAnimationNodeX, y: iconAnimationNodeY + 1, width: iconAnimationNodeLength, height: iconAnimationNodeLength)
+            self.expandableCircleGradientLayer.frame = CGRect(origin: .zero, size: self.expandableCircleNode.frame.size)
+            self.backgroundNode.frame = self.bounds
+            self.backgroundGradientLayer.frame = self.bounds
+            
+            transition.updateTransformRotation(node: iconAnimationNode, angle: .pi)
+            
+            self.currentState = state
+            return
+        }
+        
+        transition.updateFrame(node: self.textContainerNode, frame: CGRect(x: iconAnimationNodeMaxX, y: self.frame.height - textBottomOffset - releaseTextLayoutSize.height, width: self.frame.width - iconAnimationNodeMaxX, height: swipeTextLayoutSize.height))
+        transition.updateFrame(node: self.backgroundNode, frame: CGRect(origin: .zero, size: constrainedSize))
+        transition.updateFrame(layer: self.backgroundGradientLayer, frame: CGRect(origin: .zero, size: constrainedSize))
+        transition.updateFrame(node: self.expandableCircleNode, frame: CGRect(x: iconAnimationNodeX, y: iconAnimationNodeY + 1, width: iconAnimationNodeLength, height: iconAnimationNodeLength))
+        transition.updateFrame(layer: self.expandableCircleGradientLayer, frame: CGRect(origin: .zero, size: self.expandableCircleNode.frame.size))
+        
+        switch state {
+        case .swipe:
+            animatedTransition.updateAlpha(node: self.swipeTextNode, alpha: 1, beginWithCurrentState: true)
+            animatedTransition.updateAlpha(node: self.releaseTextNode, alpha: 0, beginWithCurrentState: true)
+            
+            animatedTransition.updateFrame(node: self.swipeTextNode, frame: CGRect(x: (self.frame.width / 2 - swipeTextLayoutSize.width / 2) - iconAnimationNodeMaxX, y: 0, width: swipeTextLayoutSize.width, height: swipeTextLayoutSize.height), beginWithCurrentState: true)
+            animatedTransition.updateFrame(node: self.releaseTextNode, frame: CGRect(x: -releaseTextLayoutSize.width, y: 0, width: releaseTextLayoutSize.width, height: releaseTextLayoutSize.height), beginWithCurrentState: true)
+            
+            animatedTransition.updateTransformScale(node: self.expandableCircleNode, scale: .init(x: 1, y: 1))
+            animatedTransition.updateTransformRotation(node: self.iconAnimationNode, angle: .pi)
+        case .release:
+            animatedTransition.updateAlpha(node: self.swipeTextNode, alpha: 0, beginWithCurrentState: true)
+            animatedTransition.updateAlpha(node: self.releaseTextNode, alpha: 1, beginWithCurrentState: true)
+            
+            animatedTransition.updateFrame(node: self.swipeTextNode, frame: CGRect(x: self.textContainerNode.frame.width, y: 0, width: swipeTextLayoutSize.width, height: swipeTextLayoutSize.height), beginWithCurrentState: true)
+            animatedTransition.updateFrame(node: self.releaseTextNode, frame: CGRect(x: (self.frame.width / 2 - releaseTextLayoutSize.width / 2) - iconAnimationNodeMaxX, y: 0, width: releaseTextLayoutSize.width, height: releaseTextLayoutSize.height), beginWithCurrentState: true)
+            
+            let scale = (constrainedSize.width / iconAnimationNodeLength) * 3
+            animatedTransition.updateTransformScale(node: self.expandableCircleNode, scale: .init(x: scale, y: scale))
+            animatedTransition.updateTransformRotation(node: self.iconAnimationNode, angle: 0)
+        case .dismiss:
+            animatedTransition.updateAlpha(node: self.backgroundNode, alpha: 0)
+            animatedTransition.updateAlpha(node: self.textContainerNode, alpha: 0)
+            animatedTransition.updateAlpha(node: self.barNode, alpha: 0)
+            
+            iconAnimationNode.play()
+            
+            let iconAnimationNodeFrame = CGRect(x: 10, y: 8, width: iconAnimationNodeLength + 40, height: iconAnimationNodeLength + 40)
+            
+            animatedTransition.updateCornerRadius(node: self.expandableCircleNode, cornerRadius: (iconAnimationNodeLength + 40) / 2)
+            animatedTransition.updateCornerRadius(layer: self.expandableCircleGradientLayer, cornerRadius: (iconAnimationNodeLength + 40) / 2)
+            
+            animatedTransition.updateFrame(node: self.iconAnimationNode, frame: iconAnimationNodeFrame)
+            animatedTransition.updateFrame(node: self.barNode, frame: CGRect(x: self.barNode.frame.origin.x, y: iconAnimationNodeFrame.midY, width: iconAnimationNodeLength, height: 0))
+            animatedTransition.updateFrame(node: self.expandableCircleNode, frame: iconAnimationNodeFrame)
+            animatedTransition.updateFrame(layer: self.expandableCircleGradientLayer, frame: CGRect(origin: .zero, size: self.expandableCircleNode.frame.size))
+            
+            animatedTransition.updateTransformScale(node: self.expandableCircleNode, scale: .init(x: 1, y: 1), completion: { [weak self] _ in
+                guard let self else { return }
+
+                self.removeFromSupernode()
+                self.onDismiss?()
+            })
+        }
+        
+        self.currentState = state
+    }
+    
+    func animatedIconColors() -> [String: UIColor] {
+        switch self.currentState {
+        case .none, .swipe:
+            return [
+                "Arrow 1.Arrow 1.Stroke 1": UIColor(red: 95 / 255, green: 102 / 255, blue: 109 / 255, alpha: 1),
+                "Arrow 2.Arrow 2.Stroke 1": UIColor(red: 95 / 255, green: 102 / 255, blue: 109 / 255, alpha: 1),
+                "Cap.cap2.Fill 1": .white,
+                "Cap.cap1.Fill 1": .white,
+                "Box.box1.Fill 1": .white
+            ]
+        case .release, .dismiss:
+            return [
+                "Arrow 1.Arrow 1.Stroke 1": UIColor(red: 0, green: 94 / 255, blue: 206 / 255, alpha: 1),
+                "Arrow 2.Arrow 2.Stroke 1": UIColor(red: 0, green: 94 / 255, blue: 206 / 255, alpha: 1),
+                "Cap.cap2.Fill 1": .white,
+                "Cap.cap1.Fill 1": .white,
+                "Box.box1.Fill 1": .white
+            ]
+        }
+    }
 }

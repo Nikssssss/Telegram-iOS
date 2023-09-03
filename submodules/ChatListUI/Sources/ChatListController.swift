@@ -57,22 +57,30 @@ private final class ContextControllerContentSourceImpl: ContextControllerContent
     let navigationController: NavigationController?
     
     let passthroughTouches: Bool = true
+    let animationBundle: (UIView, CGRect, UIView, CGRect, UIView, Bool, () -> Void, () -> Void, () -> Void, () -> Void)?
     
-    init(controller: ViewController, sourceNode: ASDisplayNode?, navigationController: NavigationController?) {
+    init(controller: ViewController, sourceNode: ASDisplayNode?, navigationController: NavigationController?, animationBundle: (UIView, CGRect, UIView, CGRect, UIView, Bool, () -> Void, () -> Void, () -> Void, () -> Void)? = nil) {
         self.controller = controller
         self.sourceNode = sourceNode
         self.navigationController = navigationController
+        self.animationBundle = animationBundle
     }
     
     func transitionInfo() -> ContextControllerTakeControllerInfo? {
         let sourceNode = self.sourceNode
+        var animationBundleClosure: (() -> (UIView, CGRect, UIView, CGRect, UIView, Bool, () -> Void, () -> Void, () -> Void, () -> Void))?
+        if let animationBundle {
+            animationBundleClosure = {
+                animationBundle
+            }
+        }
         return ContextControllerTakeControllerInfo(contentAreaInScreenSpace: CGRect(origin: CGPoint(), size: CGSize(width: 10.0, height: 10.0)), sourceNode: { [weak sourceNode] in
             if let sourceNode = sourceNode {
                 return (sourceNode.view, sourceNode.bounds)
             } else {
                 return nil
             }
-        })
+        }, animationBundle: animationBundleClosure)
     }
     
     func animatedIn() {
@@ -217,7 +225,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         }
     }
     
-    public init(context: AccountContext, location: ChatListControllerLocation, controlsHistoryPreload: Bool, hideNetworkActivityStatus: Bool = false, previewing: Bool = false, enableDebugActions: Bool) {
+    private let isTitleHidden: Bool
+    
+    public init(context: AccountContext, location: ChatListControllerLocation, controlsHistoryPreload: Bool, hideNetworkActivityStatus: Bool = false, previewing: Bool = false, enableDebugActions: Bool, isTitleHidden: Bool = false) {
         self.context = context
         self.controlsHistoryPreload = controlsHistoryPreload
         self.hideNetworkActivityStatus = hideNetworkActivityStatus
@@ -242,6 +252,8 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         self.tabsNode = SparseNode()
         self.tabContainerNode = ChatListFilterTabContainerNode()
         self.tabsNode.addSubnode(self.tabContainerNode)
+        
+        self.isTitleHidden = isTitleHidden
                 
         super.init(context: context, navigationBarPresentationData: nil, mediaAccessoryPanelVisibility: .always, locationBroadcastPanelSource: .summary, groupCallPanelSource: groupCallPanelSource)
         
@@ -255,6 +267,11 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         let title: String
         switch self.location {
         case let .chatList(groupId):
+            if isTitleHidden {
+                title = ""
+                break
+            }
+            
             if groupId == .root {
                 title = self.presentationData.strings.DialogList_Title
             } else {
@@ -280,7 +297,8 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 default:
                     return false
                 }
-            }
+            },
+            isTitleHidden: isTitleHidden
         )
         self.primaryContext = primaryContext
         self.primaryInfoReady.set(primaryContext.ready.get())
@@ -1274,7 +1292,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             self?.toolbarActionSelected(action: action)
         }
         
-        self.chatListDisplayNode.mainContainerNode.activateChatPreview = { [weak self] item, threadId, node, gesture, location in
+        self.chatListDisplayNode.mainContainerNode.activateChatPreview = { [weak self] item, threadId, node, gesture, location, animationBundle in
             guard let strongSelf = self else {
                 gesture?.cancel()
                 return
@@ -1291,9 +1309,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             
             switch item.content {
             case let .groupReference(groupReference):
-                let chatListController = ChatListControllerImpl(context: strongSelf.context, location: .chatList(groupId: groupReference.groupId), controlsHistoryPreload: false, hideNetworkActivityStatus: true, previewing: true, enableDebugActions: false)
+                let chatListController = ChatListControllerImpl(context: strongSelf.context, location: .chatList(groupId: groupReference.groupId), controlsHistoryPreload: false, hideNetworkActivityStatus: true, previewing: true, enableDebugActions: false, isTitleHidden: strongSelf.chatListDisplayNode.inlineStackContainerNode == nil)
                 chatListController.navigationPresentation = .master
-                let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: .controller(ContextControllerContentSourceImpl(controller: chatListController, sourceNode: node, navigationController: strongSelf.navigationController as? NavigationController)), items: archiveContextMenuItems(context: strongSelf.context, groupId: groupReference.groupId._asGroup(), chatListController: strongSelf) |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
+                let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: .controller(ContextControllerContentSourceImpl(controller: chatListController, sourceNode: node, navigationController: strongSelf.navigationController as? NavigationController, animationBundle: strongSelf.chatListDisplayNode.inlineStackContainerNode == nil ? animationBundle : nil)), items: archiveContextMenuItems(context: strongSelf.context, groupId: groupReference.groupId._asGroup(), chatListController: strongSelf) |> map { ContextController.Items(content: .list($0)) }, gesture: gesture, isExpandingAnimation: strongSelf.chatListDisplayNode.inlineStackContainerNode == nil)
                 strongSelf.presentInGlobalOverlay(contextController)
             case let .peer(peerData):
                 let peer = peerData.peer
@@ -1314,9 +1332,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                             let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: source, items: chatForumTopicMenuItems(context: strongSelf.context, peerId: peer.peerId, threadId: threadId, isPinned: nil, isClosed: nil, chatListController: strongSelf, joined: joined, canSelect: false) |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
                             strongSelf.presentInGlobalOverlay(contextController)
                         } else {
-                            let chatListController = ChatListControllerImpl(context: strongSelf.context, location: .forum(peerId: channel.id), controlsHistoryPreload: false, hideNetworkActivityStatus: true, previewing: true, enableDebugActions: false)
+                            let chatListController = ChatListControllerImpl(context: strongSelf.context, location: .forum(peerId: channel.id), controlsHistoryPreload: false, hideNetworkActivityStatus: true, previewing: true, enableDebugActions: false, isTitleHidden: strongSelf.chatListDisplayNode.inlineStackContainerNode == nil)
                             chatListController.navigationPresentation = .master
-                            let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: .controller(ContextControllerContentSourceImpl(controller: chatListController, sourceNode: node, navigationController: strongSelf.navigationController as? NavigationController)), items: chatContextMenuItems(context: strongSelf.context, peerId: peer.peerId, promoInfo: promoInfo, source: .chatList(filter: strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.chatListFilter), chatListController: strongSelf, joined: joined) |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
+                            let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: .controller(ContextControllerContentSourceImpl(controller: chatListController, sourceNode: node, navigationController: strongSelf.navigationController as? NavigationController, animationBundle: strongSelf.chatListDisplayNode.inlineStackContainerNode == nil ? animationBundle : nil)), items: chatContextMenuItems(context: strongSelf.context, peerId: peer.peerId, promoInfo: promoInfo, source: .chatList(filter: strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.chatListFilter), chatListController: strongSelf, joined: joined) |> map { ContextController.Items(content: .list($0)) }, gesture: gesture, isExpandingAnimation: strongSelf.chatListDisplayNode.inlineStackContainerNode == nil)
                             strongSelf.presentInGlobalOverlay(contextController)
                         }
                     } else {
@@ -1324,12 +1342,12 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                         if let location = location {
                             source = .location(ChatListContextLocationContentSource(controller: strongSelf, location: location))
                         } else {
-                            let chatController = strongSelf.context.sharedContext.makeChatController(context: strongSelf.context, chatLocation: .peer(id: peer.peerId), subject: nil, botStart: nil, mode: .standard(previewing: true))
+                            let chatController = strongSelf.context.sharedContext.makeChatController(context: strongSelf.context, chatLocation: .peer(id: peer.peerId), subject: nil, botStart: nil, mode: .standard(previewing: true), isTitleHidden: strongSelf.chatListDisplayNode.inlineStackContainerNode == nil)
                             chatController.canReadHistory.set(false)
-                            source = .controller(ContextControllerContentSourceImpl(controller: chatController, sourceNode: node, navigationController: strongSelf.navigationController as? NavigationController))
+                            source = .controller(ContextControllerContentSourceImpl(controller: chatController, sourceNode: node, navigationController: strongSelf.navigationController as? NavigationController, animationBundle: strongSelf.chatListDisplayNode.inlineStackContainerNode == nil ? animationBundle : nil))
                         }
                         
-                        let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: source, items: chatContextMenuItems(context: strongSelf.context, peerId: peer.peerId, promoInfo: promoInfo, source: .chatList(filter: strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.chatListFilter), chatListController: strongSelf, joined: joined) |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
+                        let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: source, items: chatContextMenuItems(context: strongSelf.context, peerId: peer.peerId, promoInfo: promoInfo, source: .chatList(filter: strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.chatListFilter), chatListController: strongSelf, joined: joined) |> map { ContextController.Items(content: .list($0)) }, gesture: gesture, isExpandingAnimation: strongSelf.chatListDisplayNode.inlineStackContainerNode == nil)
                         strongSelf.presentInGlobalOverlay(contextController)
                     }
                 case let .forum(pinnedIndex, _, threadId, _, _):
@@ -3165,7 +3183,8 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 hideNetworkActivityStatus: false,
                 containerNode: inlineNode,
                 isReorderingTabs: .single(false),
-                storyPostingAvailable: .single(false)
+                storyPostingAvailable: .single(false),
+                isTitleHidden: isTitleHidden
             )
             
             self.pendingSecondaryContext = pendingSecondaryContext
@@ -5733,6 +5752,8 @@ private final class ChatListLocationContext {
     
     private var stateDisposable: Disposable?
     
+    private let isTitleHidden: Bool
+    
     init(
         context: AccountContext,
         location: ChatListControllerLocation,
@@ -5740,11 +5761,13 @@ private final class ChatListLocationContext {
         hideNetworkActivityStatus: Bool,
         containerNode: ChatListContainerNode,
         isReorderingTabs: Signal<Bool, NoError>,
-        storyPostingAvailable: Signal<Bool, NoError>
+        storyPostingAvailable: Signal<Bool, NoError>,
+        isTitleHidden: Bool = false
     ) {
         self.context = context
         self.location = location
         self.parentController = parentController
+        self.isTitleHidden = isTitleHidden
         
         let hasProxy = context.sharedContext.accountManager.sharedData(keys: [SharedDataKeys.proxySettings])
         |> map { sharedData -> (Bool, Bool) in
@@ -6302,7 +6325,8 @@ private final class ChatListLocationContext {
                 tapped: {
                 },
                 longTapped: {
-                }
+                },
+                isTitleHidden: isTitleHidden
             )
         } else {
             self.chatTitleComponent = ChatTitleComponent(
@@ -6331,7 +6355,8 @@ private final class ChatListLocationContext {
                         return
                     }
                     self.parentController?.activateSearch()
-                }
+                },
+                isTitleHidden: isTitleHidden
             )
         }
         

@@ -97,6 +97,12 @@ private enum ChatTitleCredibilityIcon: Equatable {
 }
 
 public final class ChatTitleView: UIView, NavigationBarTitleView {
+    public var isTitleHidden = false {
+        didSet {
+            titleContainerView.isHidden = isTitleHidden
+        }
+    }
+    
     private let context: AccountContext
     
     private var theme: PresentationTheme
@@ -923,6 +929,7 @@ public final class ChatTitleComponent: Component {
     public let content: ChatTitleContent
     public let tapped: () -> Void
     public let longTapped: () -> Void
+    private let isTitleHidden: Bool
     
     public init(
         context: AccountContext,
@@ -932,7 +939,8 @@ public final class ChatTitleComponent: Component {
         nameDisplayOrder: PresentationPersonNameOrder,
         content: ChatTitleContent,
         tapped: @escaping () -> Void,
-        longTapped: @escaping () -> Void
+        longTapped: @escaping () -> Void,
+        isTitleHidden: Bool = false
     ) {
         self.context = context
         self.theme = theme
@@ -942,6 +950,7 @@ public final class ChatTitleComponent: Component {
         self.content = content
         self.tapped = tapped
         self.longTapped = longTapped
+        self.isTitleHidden = isTitleHidden
     }
     
     public static func ==(lhs: ChatTitleComponent, rhs: ChatTitleComponent) -> Bool {
@@ -995,6 +1004,7 @@ public final class ChatTitleComponent: Component {
                     animationCache: component.context.animationCache,
                     animationRenderer: component.context.animationRenderer
                 )
+                contentView.isTitleHidden = component.isTitleHidden
                 contentView.pressed = { [weak self] in
                     guard let self else {
                         return

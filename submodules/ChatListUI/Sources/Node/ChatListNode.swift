@@ -92,7 +92,7 @@ public final class ChatListNodeInteraction {
     let toggleArchivedFolderHiddenByDefault: () -> Void
     let toggleThreadsSelection: ([Int64], Bool) -> Void
     let hidePsa: (EnginePeer.Id) -> Void
-    let activateChatPreview: (ChatListItem, Int64?, ASDisplayNode, ContextGesture?, CGPoint?) -> Void
+    let activateChatPreview: (ChatListItem, Int64?, ASDisplayNode, ContextGesture?, CGPoint?, (UIView, CGRect, UIView, CGRect, UIView, Bool, () -> Void, () -> Void, () -> Void, () -> Void)?) -> Void
     let present: (ViewController) -> Void
     let openForumThread: (EnginePeer.Id, Int64) -> Void
     let openStorageManagement: () -> Void
@@ -140,7 +140,7 @@ public final class ChatListNodeInteraction {
         toggleArchivedFolderHiddenByDefault: @escaping () -> Void,
         toggleThreadsSelection: @escaping ([Int64], Bool) -> Void,
         hidePsa: @escaping (EnginePeer.Id) -> Void,
-        activateChatPreview: @escaping (ChatListItem, Int64?, ASDisplayNode, ContextGesture?, CGPoint?) -> Void,
+        activateChatPreview: @escaping (ChatListItem, Int64?, ASDisplayNode, ContextGesture?, CGPoint?, (UIView, CGRect, UIView, CGRect, UIView, Bool, () -> Void, () -> Void, () -> Void, () -> Void)?) -> Void,
         present: @escaping (ViewController) -> Void,
         openForumThread: @escaping (EnginePeer.Id, Int64) -> Void,
         openStorageManagement: @escaping () -> Void,
@@ -1122,7 +1122,7 @@ public final class ChatListNode: ListView {
     public var push: ((ViewController) -> Void)?
     public var toggleArchivedFolderHiddenByDefault: (() -> Void)?
     public var hidePsa: ((EnginePeer.Id) -> Void)?
-    public var activateChatPreview: ((ChatListItem, Int64?, ASDisplayNode, ContextGesture?, CGPoint?) -> Void)?
+    public var activateChatPreview: ((ChatListItem, Int64?, ASDisplayNode, ContextGesture?, CGPoint?, (UIView, CGRect, UIView, CGRect, UIView, Bool, () -> Void, () -> Void, () -> Void, () -> Void)?) -> Void)?
     public var openStories: ((ChatListNode.OpenStoriesSubject, ASDisplayNode?) -> Void)?
     
     private var theme: PresentationTheme
@@ -1512,12 +1512,12 @@ public final class ChatListNode: ListView {
             }
         }, hidePsa: { [weak self] id in
             self?.hidePsa?(id)
-        }, activateChatPreview: { [weak self] item, threadId, node, gesture, location in
+        }, activateChatPreview: { [weak self] item, threadId, node, gesture, location, animationBundle in
             guard let strongSelf = self else {
                 return
             }
             if let activateChatPreview = strongSelf.activateChatPreview {
-                activateChatPreview(item, threadId, node, gesture, location)
+                activateChatPreview(item, threadId, node, gesture, location, animationBundle)
             } else {
                 gesture?.cancel()
             }

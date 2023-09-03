@@ -295,6 +295,11 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
         }
     }
     
+    private var animationView: (UIView, CGRect)?
+    private var avatarSnapshotViewCopy: UIView?
+    
+    private let isExpandingAnimation: Bool
+    
     init(
         account: Account,
         controller: ContextController,
@@ -305,7 +310,8 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
         recognizer: TapLongTapOrDoubleTapGestureRecognizer?,
         gesture: ContextGesture?,
         beganAnimatingOut: @escaping () -> Void,
-        attemptTransitionControllerIntoNavigation: @escaping () -> Void
+        attemptTransitionControllerIntoNavigation: @escaping () -> Void,
+        isExpandingAnimation: Bool
     ) {
         self.presentationData = presentationData
         self.source = source
@@ -314,6 +320,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
         self.beganAnimatingOut = beganAnimatingOut
         self.attemptTransitionControllerIntoNavigation = attemptTransitionControllerIntoNavigation
         self.gesture = gesture
+        self.isExpandingAnimation = isExpandingAnimation
         
         self.getController = { [weak controller] in
             return controller
@@ -801,7 +808,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
             if let transitionInfo = transitionInfo, let (sourceView, sourceNodeRect) = transitionInfo.sourceNode() {
                 let contentParentNode = ContextControllerContentNode(sourceView: sourceView, controller: source.controller, tapped: { [weak self] in
                     self?.attemptTransitionControllerIntoNavigation()
-                })
+                }, animationBundle: transitionInfo.animationBundle?())
                 self.contentContainerNode.contentNode = .controller(contentParentNode)
                 self.scrollNode.addSubnode(self.contentContainerNode)
                 self.contentContainerNode.clipsToBounds = true
@@ -959,46 +966,156 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 
                 extracted.willUpdateIsExtractedToContextPreview?(true, .animated(duration: 0.2, curve: .easeInOut))
             case .controller:
-                let springDuration: Double = 0.52 * animationDurationFactor
-                let springDamping: CGFloat = 110.0
-                
-                self.actionsContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2 * animationDurationFactor)
-                self.actionsContainerNode.layer.animateSpring(from: 0.1 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
-                self.contentContainerNode.allowsGroupOpacity = true
-                self.contentContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2 * animationDurationFactor, completion: { [weak self] _ in
-                    self?.contentContainerNode.allowsGroupOpacity = false
-                })
-                
-                if let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame {
-                    let localSourceFrame = self.view.convert(CGRect(origin: CGPoint(x: originalProjectedContentViewFrame.1.minX, y: originalProjectedContentViewFrame.1.minY), size: CGSize(width: originalProjectedContentViewFrame.1.width, height: originalProjectedContentViewFrame.1.height)), to: self.scrollNode.view)
+                if isExpandingAnimation {
+                    let springDuration: Double = 0.52 * animationDurationFactor
+                    let springDamping: CGFloat = 110.0
                     
-                    self.contentContainerNode.layer.animateSpring(from: min(localSourceFrame.width / self.contentContainerNode.frame.width, localSourceFrame.height / self.contentContainerNode.frame.height) as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
-                    
-                    switch self.source {
-                    case let .controller(controller):
-                        controller.animatedIn()
-                    default:
-                        break
-                    }
-                    
-                    let contentContainerOffset = CGPoint(x: localSourceFrame.center.x - self.contentContainerNode.frame.center.x, y: localSourceFrame.center.y - self.contentContainerNode.frame.center.y)
-                    if let contentNode = self.contentContainerNode.contentNode, case let .controller(controller) = contentNode {
-                        let snapshotView: UIView? = nil// controller.sourceNode.view.snapshotContentTree()
-                        if let snapshotView = snapshotView {
-                            controller.sourceView.isHidden = true
-                            
-                            self.view.insertSubview(snapshotView, belowSubview: self.contentContainerNode.view)
-                            snapshotView.layer.animateSpring(from: NSValue(cgPoint: localSourceFrame.center), to: NSValue(cgPoint: CGPoint(x: self.contentContainerNode.frame.midX, y: self.contentContainerNode.frame.minY + localSourceFrame.height / 2.0)), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                            //snapshotView.layer.animateSpring(from: 1.0 as NSNumber, to: (self.contentContainerNode.frame.width / localSourceFrame.width) as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                            snapshotView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2 * animationDurationFactor, removeOnCompletion: false, completion: { [weak snapshotView] _ in
-                                snapshotView?.removeFromSuperview()
-                            })
-                        }
-                    }
-                    self.actionsContainerNode.layer.animateSpring(from: NSValue(cgPoint: CGPoint(x: localSourceFrame.center.x - self.actionsContainerNode.position.x, y: localSourceFrame.center.y - self.actionsContainerNode.position.y)), to: NSValue(cgPoint: CGPoint()), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, additive: true)
-                    self.contentContainerNode.layer.animateSpring(from: NSValue(cgPoint: contentContainerOffset), to: NSValue(cgPoint: CGPoint()), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, additive: true, completion: { [weak self] _ in
-                        self?.animatedIn = true
+                    self.actionsContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: springDuration / 2 * animationDurationFactor)
+                    self.actionsContainerNode.layer.animateSpring(from: 0.1 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
+                    self.contentContainerNode.allowsGroupOpacity = true
+                    self.contentContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: springDuration * animationDurationFactor, completion: { [weak self] _ in
+                        self?.contentContainerNode.allowsGroupOpacity = false
                     })
+                    
+                    let safeInsets = validLayout?.safeInsets ?? .zero
+                    
+                    if let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame {
+                        let localSourceFrame = self.view.convert(CGRect(origin: CGPoint(x: originalProjectedContentViewFrame.1.minX, y: originalProjectedContentViewFrame.1.minY), size: CGSize(width: originalProjectedContentViewFrame.1.width, height: originalProjectedContentViewFrame.1.height)), to: self.scrollNode.view)
+                        
+                        switch self.source {
+                        case let .controller(controller):
+                            controller.animatedIn()
+                        default:
+                            break
+                        }
+                        
+                        let containerFrame = self.contentContainerNode.frame
+                        self.contentContainerNode.frame = localSourceFrame
+                        
+                        ContainedViewLayoutTransition.animated(duration: springDuration, curve: .spring).updateFrame(node: self.contentContainerNode, frame: containerFrame)
+                        
+                        if let contentNode = self.contentContainerNode.contentNode, case let .controller(controller) = contentNode, let animationBundle = controller.animationBundle {
+                            let animationSnapshotView = animationBundle.0
+                            let animationViewFrame = animationBundle.1
+                            let avatarSnapshotView = animationBundle.2
+                            let avatarViewFrame = animationBundle.3
+                            let avatarSnapshotViewCopy = animationBundle.4
+                            let isGroupReference = animationBundle.5
+                            let willAnimateIn = animationBundle.6
+                            let didAnimateIn = animationBundle.7
+                            
+                            willAnimateIn()
+                            let snapshotView: UIView? = controller.sourceView.snapshotContentTree()
+                            didAnimateIn()
+                            
+                            if let snapshotView {
+                                controller.sourceView.isHidden = true
+                                
+                                self.animationView = (animationSnapshotView, animationViewFrame)
+                                self.avatarSnapshotViewCopy = avatarSnapshotViewCopy
+                                
+                                self.view.insertSubview(snapshotView, belowSubview: self.contentContainerNode.view)
+                                self.view.insertSubview(animationSnapshotView, aboveSubview: snapshotView)
+                                snapshotView.addSubview(avatarSnapshotView)
+                                
+                                if !isGroupReference {
+                                    self.view.addSubview(avatarSnapshotViewCopy)
+                                }
+                                
+                                snapshotView.frame = localSourceFrame
+                                snapshotView.clipsToBounds = true
+                                snapshotView.layer.masksToBounds = true
+                                snapshotView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+                                
+                                animationSnapshotView.frame = CGRect(x: localSourceFrame.minX + animationBundle.1.minX + safeInsets.left, y: localSourceFrame.minY + 10, width: animationSnapshotView.frame.width, height: animationSnapshotView.frame.height)
+                                
+                                avatarSnapshotView.frame = CGRect(x: 10 + safeInsets.left, y: 5, width: avatarViewFrame.width, height: avatarViewFrame.height)
+                                
+                                if !isGroupReference {
+                                    avatarSnapshotViewCopy.frame = CGRect(x: localSourceFrame.maxX - 5 - avatarViewFrame.width, y: localSourceFrame.midY, width: avatarViewFrame.width, height: avatarViewFrame.height)
+                                    avatarSnapshotViewCopy.alpha = 0
+                                    ContainedViewLayoutTransition.immediate.updateTransformScale(layer: avatarSnapshotViewCopy.layer, scale: 0.5)
+                                }
+                                
+                                willAnimateIn()
+                                
+                                let transition: ContainedViewLayoutTransition = .animated(duration: springDuration, curve: .spring)
+                                
+                                transition.updateFrame(layer: snapshotView.layer, frame: CGRect(x: containerFrame.minX, y: containerFrame.minY, width: containerFrame.width, height: 40))
+                                
+                                let animationViewYOffset: CGFloat = isGroupReference ? 10 : 3
+                                
+                                transition.updateFrame(layer: animationSnapshotView.layer, frame: CGRect(x: containerFrame.midX - animationViewFrame.width / 2, y: containerFrame.minY + animationViewYOffset, width: animationViewFrame.width, height: animationViewFrame.height))
+                                transition.updateFrame(layer: avatarSnapshotView.layer, frame: CGRect(x: 10, y: -5, width: avatarViewFrame.width, height: avatarViewFrame.height))
+
+                                if !isGroupReference {
+                                    let avatarSnapshotViewCopyYOffset: CGFloat = validLayout?.orientation == .landscape ? 0 : 5
+                                    let avatarSnapshotViewCopyXOffset: CGFloat = validLayout?.orientation == .landscape ? 0 : 5
+                                    
+                                    transition.updateFrame(layer: avatarSnapshotViewCopy.layer, frame: CGRect(x: containerFrame.maxX - avatarViewFrame.width * 0.5 - avatarSnapshotViewCopyXOffset, y: containerFrame.minY + avatarSnapshotViewCopyYOffset, width: avatarViewFrame.width * 0.5, height: avatarViewFrame.height * 0.5))
+                                    avatarSnapshotViewCopy.layer.animateSpring(from: 0.25 as NSNumber, to: 0.5 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, removeOnCompletion: false)
+                                }
+                                
+                                transition.updateTransformScale(layer: avatarSnapshotView.layer, scale: 0.5)
+                                
+                                if !isGroupReference {
+                                    transition.updateAlpha(layer: avatarSnapshotViewCopy.layer, alpha: 1)
+                                }
+                                
+                                transition.updateCornerRadius(layer: snapshotView.layer, cornerRadius: 14, completion: { _ in didAnimateIn() })
+
+                                snapshotView.layer.animateAlpha(from: 1.0, to: 0.0, duration: springDuration * 0.8, removeOnCompletion: false, completion: { [weak snapshotView] _ in
+                                    snapshotView?.removeFromSuperview()
+                                })
+                            }
+                        }
+                        
+                        let actionsFrame = self.actionsContainerNode.frame
+                        self.actionsContainerNode.frame = CGRect(x: localSourceFrame.minX, y: localSourceFrame.maxY, width: 0, height: 0)
+                        ContainedViewLayoutTransition.animated(duration: springDuration, curve: .spring).updateFrame(node: self.actionsContainerNode, frame: actionsFrame, completion: { [weak self] _ in self?.animatedIn = true })
+                    }
+                } else {
+                    let springDuration: Double = 0.52 * animationDurationFactor
+                    let springDamping: CGFloat = 110.0
+                    
+                    self.actionsContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2 * animationDurationFactor)
+                    self.actionsContainerNode.layer.animateSpring(from: 0.1 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
+                    self.contentContainerNode.allowsGroupOpacity = true
+                    self.contentContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2 * animationDurationFactor, completion: { [weak self] _ in
+                        self?.contentContainerNode.allowsGroupOpacity = false
+                    })
+                    
+                    if let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame {
+                        let localSourceFrame = self.view.convert(CGRect(origin: CGPoint(x: originalProjectedContentViewFrame.1.minX, y: originalProjectedContentViewFrame.1.minY), size: CGSize(width: originalProjectedContentViewFrame.1.width, height: originalProjectedContentViewFrame.1.height)), to: self.scrollNode.view)
+                        
+                        self.contentContainerNode.layer.animateSpring(from: min(localSourceFrame.width / self.contentContainerNode.frame.width, localSourceFrame.height / self.contentContainerNode.frame.height) as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
+                        
+                        switch self.source {
+                        case let .controller(controller):
+                            controller.animatedIn()
+                        default:
+                            break
+                        }
+                        
+                        let contentContainerOffset = CGPoint(x: localSourceFrame.center.x - self.contentContainerNode.frame.center.x, y: localSourceFrame.center.y - self.contentContainerNode.frame.center.y)
+                        if let contentNode = self.contentContainerNode.contentNode, case let .controller(controller) = contentNode {
+                            let snapshotView: UIView? = nil// controller.sourceNode.view.snapshotContentTree()
+                            if let snapshotView = snapshotView {
+                                controller.sourceView.isHidden = true
+                                
+                                self.view.insertSubview(snapshotView, belowSubview: self.contentContainerNode.view)
+                                snapshotView.layer.animateSpring(from: NSValue(cgPoint: localSourceFrame.center), to: NSValue(cgPoint: CGPoint(x: self.contentContainerNode.frame.midX, y: self.contentContainerNode.frame.minY + localSourceFrame.height / 2.0)), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
+                                //snapshotView.layer.animateSpring(from: 1.0 as NSNumber, to: (self.contentContainerNode.frame.width / localSourceFrame.width) as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
+                                snapshotView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2 * animationDurationFactor, removeOnCompletion: false, completion: { [weak snapshotView] _ in
+                                    snapshotView?.removeFromSuperview()
+                                })
+                            }
+                        }
+                        self.actionsContainerNode.layer.animateSpring(from: NSValue(cgPoint: CGPoint(x: localSourceFrame.center.x - self.actionsContainerNode.position.x, y: localSourceFrame.center.y - self.actionsContainerNode.position.y)), to: NSValue(cgPoint: CGPoint()), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, additive: true)
+                        self.contentContainerNode.layer.animateSpring(from: NSValue(cgPoint: contentContainerOffset), to: NSValue(cgPoint: CGPoint()), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, additive: true, completion: { [weak self] _ in
+                            self?.animatedIn = true
+                        })
+                    }
                 }
             }
         }
@@ -1315,145 +1432,341 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 contentParentNode.willUpdateIsExtractedToContextPreview?(false, .animated(duration: 0.2, curve: .easeInOut))
             }
         case let .controller(source):
-            guard let maybeContentNode = self.contentContainerNode.contentNode, case let .controller(controller) = maybeContentNode else {
-                return
-            }
-            
-            let transitionInfo = source.transitionInfo()
-            
-            if transitionInfo == nil {
-                result = .dismissWithoutContent
-            }
-            
-            switch result {
-            case let .custom(value):
-                switch value {
-                case let .animated(duration, curve):
-                    transitionDuration = duration
-                    transitionCurve = curve
+            if isExpandingAnimation {
+                guard let maybeContentNode = self.contentContainerNode.contentNode, case let .controller(controller) = maybeContentNode else {
+                    return
+                }
+                
+                transitionDuration = 0.52
+                
+                let transitionInfo = source.transitionInfo()
+                
+                if transitionInfo == nil {
+                    result = .dismissWithoutContent
+                }
+                
+                switch result {
+                case let .custom(value):
+                    switch value {
+                    case let .animated(duration, curve):
+                        transitionDuration = duration
+                        transitionCurve = curve
+                    default:
+                        break
+                    }
                 default:
                     break
                 }
-            default:
-                break
-            }
-            
-            self.isUserInteractionEnabled = false
-            self.isAnimatingOut = true
-            
-            self.scrollNode.view.setContentOffset(self.scrollNode.view.contentOffset, animated: false)
-            
-            var completedEffect = false
-            var completedContentNode = false
-            var completedActionsNode = false
-            
-            if let transitionInfo = transitionInfo, let (sourceView, sourceNodeRect) = transitionInfo.sourceNode() {
-                let projectedFrame = convertFrame(sourceNodeRect, from: sourceView, to: self.view)
-                self.originalProjectedContentViewFrame = (projectedFrame, projectedFrame)
                 
-                var updatedContentAreaInScreenSpace = transitionInfo.contentAreaInScreenSpace
-                updatedContentAreaInScreenSpace.origin.x = 0.0
-                updatedContentAreaInScreenSpace.size.width = self.bounds.width
-            }
-            
-            let intermediateCompletion: () -> Void = {
-                if completedEffect && completedContentNode && completedActionsNode {
-                    switch result {
-                    case .default, .custom:
-                        break
-                    case .dismissWithoutContent:
-                        break
-                    }
+                self.isUserInteractionEnabled = false
+                self.isAnimatingOut = true
+                
+                self.scrollNode.view.setContentOffset(self.scrollNode.view.contentOffset, animated: false)
+                
+                var completedEffect = false
+                var completedContentNode = false
+                var completedActionsNode = false
+                
+                if let transitionInfo = transitionInfo, let (sourceView, sourceNodeRect) = transitionInfo.sourceNode() {
+                    let projectedFrame = convertFrame(sourceNodeRect, from: sourceView, to: self.view)
+                    self.originalProjectedContentViewFrame = (projectedFrame, projectedFrame)
                     
-                    completion()
+                    var updatedContentAreaInScreenSpace = transitionInfo.contentAreaInScreenSpace
+                    updatedContentAreaInScreenSpace.origin.x = 0.0
+                    updatedContentAreaInScreenSpace.size.width = self.bounds.width
                 }
-            }
-            
-            if #available(iOS 10.0, *) {
-                if let propertyAnimator = self.propertyAnimator {
-                    let propertyAnimator = propertyAnimator as? UIViewPropertyAnimator
-                    propertyAnimator?.stopAnimation(true)
+                
+                let intermediateCompletion: () -> Void = {
+                    if completedEffect && completedContentNode && completedActionsNode {
+                        switch result {
+                        case .default, .custom:
+                            break
+                        case .dismissWithoutContent:
+                            break
+                        }
+                        
+                        completion()
+                    }
                 }
-                self.propertyAnimator = UIViewPropertyAnimator(duration: transitionDuration * UIView.animationDurationFactor(), curve: .easeInOut, animations: { [weak self] in
-                    self?.effectView.effect = nil
-                })
-            }
-            
-            if let _ = self.propertyAnimator {
-                if #available(iOSApplicationExtension 10.0, iOS 10.0, *) {
-                    self.displayLinkAnimator = DisplayLinkAnimator(duration: 0.2 * animationDurationFactor * UIView.animationDurationFactor(), from: 0.0, to: 0.999, update: { [weak self] value in
-                        (self?.propertyAnimator as? UIViewPropertyAnimator)?.fractionComplete = value
-                    }, completion: {
+                
+                if #available(iOS 10.0, *) {
+                    if let propertyAnimator = self.propertyAnimator {
+                        let propertyAnimator = propertyAnimator as? UIViewPropertyAnimator
+                        propertyAnimator?.stopAnimation(true)
+                    }
+                    self.propertyAnimator = UIViewPropertyAnimator(duration: transitionDuration * UIView.animationDurationFactor(), curve: .easeInOut, animations: { [weak self] in
+                        self?.effectView.effect = nil
+                    })
+                }
+                
+                if let _ = self.propertyAnimator {
+                    if #available(iOSApplicationExtension 10.0, iOS 10.0, *) {
+                        self.displayLinkAnimator = DisplayLinkAnimator(duration: 0.2 * animationDurationFactor * UIView.animationDurationFactor(), from: 0.0, to: 0.999, update: { [weak self] value in
+                            (self?.propertyAnimator as? UIViewPropertyAnimator)?.fractionComplete = value
+                        }, completion: {
+                            completedEffect = true
+                            intermediateCompletion()
+                        })
+                    }
+                    self.effectView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.05 * animationDurationFactor, delay: 0.15, timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, removeOnCompletion: false)
+                } else {
+                    UIView.animate(withDuration: 0.21 * animationDurationFactor, animations: {
+                        if #available(iOS 9.0, *) {
+                            self.effectView.effect = nil
+                        } else {
+                            self.effectView.alpha = 0.0
+                        }
+                    }, completion: { _ in
                         completedEffect = true
                         intermediateCompletion()
                     })
                 }
-                self.effectView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.05 * animationDurationFactor, delay: 0.15, timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, removeOnCompletion: false)
-            } else {
-                UIView.animate(withDuration: 0.21 * animationDurationFactor, animations: {
-                    if #available(iOS 9.0, *) {
-                        self.effectView.effect = nil
-                    } else {
-                        self.effectView.alpha = 0.0
-                    }
-                }, completion: { _ in
-                    completedEffect = true
+                
+                if !self.dimNode.isHidden {
+                    self.dimNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false)
+                } else {
+                    self.withoutBlurDimNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false)
+                }
+                self.actionsContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false, completion: { _ in
+                    completedActionsNode = true
                     intermediateCompletion()
                 })
-            }
-            
-            if !self.dimNode.isHidden {
-                self.dimNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false)
-            } else {
-                self.withoutBlurDimNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false)
-            }
-            self.actionsContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2 * animationDurationFactor, removeOnCompletion: false, completion: { _ in
-                completedActionsNode = true
-                intermediateCompletion()
-            })
-            self.contentContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2 * animationDurationFactor, removeOnCompletion: false, completion: { _ in
-            })
-            self.actionsContainerNode.layer.animateScale(from: 1.0, to: 0.1, duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false)
-            self.contentContainerNode.layer.animateScale(from: 1.0, to: 0.01, duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false)
-            
-            let animateOutToItem: Bool
-            switch result {
-            case .default, .custom:
-                animateOutToItem = true
-            case .dismissWithoutContent:
-                animateOutToItem = false
-            }
-            
-            if animateOutToItem, let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame {
-                let localSourceFrame = self.view.convert(CGRect(origin: CGPoint(x: originalProjectedContentViewFrame.1.minX, y: originalProjectedContentViewFrame.1.minY), size: CGSize(width: originalProjectedContentViewFrame.1.width, height: originalProjectedContentViewFrame.1.height)), to: self.scrollNode.view)
+                self.contentContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false, completion: { _ in
+                })
+                self.actionsContainerNode.layer.animateScale(from: 1.0, to: 0.1, duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false)
                 
-                self.actionsContainerNode.layer.animatePosition(from: CGPoint(), to: CGPoint(x: localSourceFrame.center.x - self.actionsContainerNode.position.x, y: localSourceFrame.center.y - self.actionsContainerNode.position.y), duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false, additive: true)
-                let contentContainerOffset = CGPoint(x: localSourceFrame.center.x - self.contentContainerNode.frame.center.x, y: localSourceFrame.center.y - self.contentContainerNode.frame.center.y)
-                self.contentContainerNode.layer.animatePosition(from: CGPoint(), to: contentContainerOffset, duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false, additive: true, completion: { [weak self] _ in
-                    completedContentNode = true
-                    if let strongSelf = self, let contentNode = strongSelf.contentContainerNode.contentNode, case let .controller(controller) = contentNode {
+                let animateOutToItem: Bool
+                switch result {
+                case .default, .custom:
+                    animateOutToItem = true
+                case .dismissWithoutContent:
+                    animateOutToItem = false
+                }
+                
+                let safeInsets = validLayout?.safeInsets ?? .zero
+                
+                if animateOutToItem, let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame, let animationBundle = controller.animationBundle {
+                    let localSourceFrame = self.view.convert(CGRect(origin: CGPoint(x: originalProjectedContentViewFrame.1.minX, y: originalProjectedContentViewFrame.1.minY), size: CGSize(width: originalProjectedContentViewFrame.1.width, height: originalProjectedContentViewFrame.1.height)), to: self.scrollNode.view)
+                                    
+                    let transition: ContainedViewLayoutTransition = .animated(duration: transitionDuration, curve: .spring)
+                    
+                    let containerFrame = self.contentContainerNode.frame
+                    
+                    transition.updateFrame(node: self.contentContainerNode, frame: localSourceFrame, completion: { [weak self] _ in
+                        completedContentNode = true
+                        if let strongSelf = self, let contentNode = strongSelf.contentContainerNode.contentNode, case let .controller(controller) = contentNode {
+                            controller.sourceView.isHidden = false
+                        }
+                        intermediateCompletion()
+                    })
+                    transition.updateFrame(node: self.actionsContainerNode, frame: CGRect(x: localSourceFrame.minX, y: localSourceFrame.maxY, width: 0, height: 0))
+                    
+                    let avatarView = animationBundle.2
+                    let avatarViewFrame = animationBundle.3
+                    let willAnimateOut = animationBundle.8
+                    let didAnimateOut = animationBundle.9
+                    
+                    let avatarSnapshotView = avatarView.snapshotContentTree()
+                    
+                    willAnimateOut()
+                    controller.sourceView.isHidden = false
+                    let snapshotView: UIView? = controller.sourceView.snapshotContentTree()
+                    controller.sourceView.isHidden = true
+                    didAnimateOut()
+                    
+                    if let snapshotView, let avatarSnapshotView, let animationSnapshotView = animationView?.0 {
+                        controller.sourceView.isHidden = true
+                        
+                        self.view.insertSubview(snapshotView, belowSubview: animationSnapshotView)
+                        snapshotView.addSubview(avatarSnapshotView)
+                        
+                        snapshotView.frame = CGRect(x: containerFrame.minX, y: containerFrame.minY, width: containerFrame.width, height: 40)
+                        snapshotView.clipsToBounds = true
+                        snapshotView.layer.masksToBounds = true
+                        snapshotView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+                        snapshotView.layer.cornerRadius = 14
+                        
+                        avatarSnapshotView.layer.animateSpring(from: 0.5 as NSNumber, to: 1 as NSNumber, keyPath: "transform.scale", duration: transitionDuration, initialVelocity: 0.0, removeOnCompletion: false)
+                        avatarSnapshotView.frame = CGRect(x: 10, y: -5, width: avatarViewFrame.width, height: avatarViewFrame.height)
+                        
+                        willAnimateOut()
+                        
+                        transition.updateFrame(layer: snapshotView.layer, frame: localSourceFrame)
+                        
+                        transition.updateFrame(layer: animationSnapshotView.layer, frame: CGRect(x: localSourceFrame.minX + animationBundle.1.minX + safeInsets.left, y: localSourceFrame.minY + 8.5, width: animationSnapshotView.frame.width, height: animationSnapshotView.frame.height))
+                        transition.updateFrame(layer: avatarSnapshotView.layer, frame: CGRect(x: 10 + safeInsets.left, y: localSourceFrame.height / 2 - avatarViewFrame.height / 2, width: avatarViewFrame.width, height: avatarViewFrame.height))
+                        
+                        if let avatarSnapshotViewCopy {
+                            avatarSnapshotViewCopy.layer.animatePosition(from: avatarSnapshotViewCopy.center, to: CGPoint(x: localSourceFrame.maxX - 5 - avatarViewFrame.width / 2, y: localSourceFrame.midY), duration: transitionDuration, timingFunction: ContainedViewLayoutTransitionCurve.spring.timingFunction)
+                            transition.updateAlpha(layer: avatarSnapshotViewCopy.layer, alpha: 0)
+                            avatarSnapshotViewCopy.layer.animateSpring(from: 0.5 as NSNumber, to: 0.25 as NSNumber, keyPath: "transform.scale", duration: transitionDuration, initialVelocity: 0.0, removeOnCompletion: false)
+                        }
+
+                        transition.updateAlpha(layer: avatarSnapshotView.layer, alpha: 1)
+                        
+                        transition.updateCornerRadius(layer: snapshotView.layer, cornerRadius: 0)
+                        
+                        snapshotView.layer.animateAlpha(from: 0, to: 1, duration: transitionDuration, removeOnCompletion: false, completion: { [weak snapshotView] _ in
+                            snapshotView?.removeFromSuperview()
+                            didAnimateOut()
+                        })
+                    }
+                } else {
+                    if let contentNode = self.contentContainerNode.contentNode, case let .controller(controller) = contentNode {
                         controller.sourceView.isHidden = false
                     }
-                    intermediateCompletion()
-                })
+                    
+                    if let snapshotView = controller.view.snapshotContentTree(keepTransform: true) {
+                        self.contentContainerNode.view.addSubview(snapshotView)
+                    }
+                    
+                    self.contentContainerNode.allowsGroupOpacity = true
+                    self.contentContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false, completion: { _ in
+                        completedContentNode = true
+                        intermediateCompletion()
+                    })
+                }
             } else {
-                if let contentNode = self.contentContainerNode.contentNode, case let .controller(controller) = contentNode {
-                    controller.sourceView.isHidden = false
+                guard let maybeContentNode = self.contentContainerNode.contentNode, case let .controller(controller) = maybeContentNode else {
+                    return
                 }
                 
-                if let snapshotView = controller.view.snapshotContentTree(keepTransform: true) {
-                    self.contentContainerNode.view.addSubview(snapshotView)
+                let transitionInfo = source.transitionInfo()
+                
+                if transitionInfo == nil {
+                    result = .dismissWithoutContent
                 }
                 
-                self.contentContainerNode.allowsGroupOpacity = true
-                self.contentContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false, completion: { _ in
-                    completedContentNode = true
+                switch result {
+                case let .custom(value):
+                    switch value {
+                    case let .animated(duration, curve):
+                        transitionDuration = duration
+                        transitionCurve = curve
+                    default:
+                        break
+                    }
+                default:
+                    break
+                }
+                
+                self.isUserInteractionEnabled = false
+                self.isAnimatingOut = true
+                
+                self.scrollNode.view.setContentOffset(self.scrollNode.view.contentOffset, animated: false)
+                
+                var completedEffect = false
+                var completedContentNode = false
+                var completedActionsNode = false
+                
+                if let transitionInfo = transitionInfo, let (sourceView, sourceNodeRect) = transitionInfo.sourceNode() {
+                    let projectedFrame = convertFrame(sourceNodeRect, from: sourceView, to: self.view)
+                    self.originalProjectedContentViewFrame = (projectedFrame, projectedFrame)
+                    
+                    var updatedContentAreaInScreenSpace = transitionInfo.contentAreaInScreenSpace
+                    updatedContentAreaInScreenSpace.origin.x = 0.0
+                    updatedContentAreaInScreenSpace.size.width = self.bounds.width
+                }
+                
+                let intermediateCompletion: () -> Void = {
+                    if completedEffect && completedContentNode && completedActionsNode {
+                        switch result {
+                        case .default, .custom:
+                            break
+                        case .dismissWithoutContent:
+                            break
+                        }
+                        
+                        completion()
+                    }
+                }
+                
+                if #available(iOS 10.0, *) {
+                    if let propertyAnimator = self.propertyAnimator {
+                        let propertyAnimator = propertyAnimator as? UIViewPropertyAnimator
+                        propertyAnimator?.stopAnimation(true)
+                    }
+                    self.propertyAnimator = UIViewPropertyAnimator(duration: transitionDuration * UIView.animationDurationFactor(), curve: .easeInOut, animations: { [weak self] in
+                        self?.effectView.effect = nil
+                    })
+                }
+                
+                if let _ = self.propertyAnimator {
+                    if #available(iOSApplicationExtension 10.0, iOS 10.0, *) {
+                        self.displayLinkAnimator = DisplayLinkAnimator(duration: 0.2 * animationDurationFactor * UIView.animationDurationFactor(), from: 0.0, to: 0.999, update: { [weak self] value in
+                            (self?.propertyAnimator as? UIViewPropertyAnimator)?.fractionComplete = value
+                        }, completion: {
+                            completedEffect = true
+                            intermediateCompletion()
+                        })
+                    }
+                    self.effectView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.05 * animationDurationFactor, delay: 0.15, timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, removeOnCompletion: false)
+                } else {
+                    UIView.animate(withDuration: 0.21 * animationDurationFactor, animations: {
+                        if #available(iOS 9.0, *) {
+                            self.effectView.effect = nil
+                        } else {
+                            self.effectView.alpha = 0.0
+                        }
+                    }, completion: { _ in
+                        completedEffect = true
+                        intermediateCompletion()
+                    })
+                }
+                
+                if !self.dimNode.isHidden {
+                    self.dimNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false)
+                } else {
+                    self.withoutBlurDimNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false)
+                }
+                self.actionsContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2 * animationDurationFactor, removeOnCompletion: false, completion: { _ in
+                    completedActionsNode = true
                     intermediateCompletion()
                 })
+                self.contentContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2 * animationDurationFactor, removeOnCompletion: false, completion: { _ in
+                })
+                self.actionsContainerNode.layer.animateScale(from: 1.0, to: 0.1, duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false)
+                self.contentContainerNode.layer.animateScale(from: 1.0, to: 0.01, duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false)
+                
+                let animateOutToItem: Bool
+                switch result {
+                case .default, .custom:
+                    animateOutToItem = true
+                case .dismissWithoutContent:
+                    animateOutToItem = false
+                }
+                
+                if animateOutToItem, let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame {
+                    let localSourceFrame = self.view.convert(CGRect(origin: CGPoint(x: originalProjectedContentViewFrame.1.minX, y: originalProjectedContentViewFrame.1.minY), size: CGSize(width: originalProjectedContentViewFrame.1.width, height: originalProjectedContentViewFrame.1.height)), to: self.scrollNode.view)
+                    
+                    self.actionsContainerNode.layer.animatePosition(from: CGPoint(), to: CGPoint(x: localSourceFrame.center.x - self.actionsContainerNode.position.x, y: localSourceFrame.center.y - self.actionsContainerNode.position.y), duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false, additive: true)
+                    let contentContainerOffset = CGPoint(x: localSourceFrame.center.x - self.contentContainerNode.frame.center.x, y: localSourceFrame.center.y - self.contentContainerNode.frame.center.y)
+                    self.contentContainerNode.layer.animatePosition(from: CGPoint(), to: contentContainerOffset, duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false, additive: true, completion: { [weak self] _ in
+                        completedContentNode = true
+                        if let strongSelf = self, let contentNode = strongSelf.contentContainerNode.contentNode, case let .controller(controller) = contentNode {
+                            controller.sourceView.isHidden = false
+                        }
+                        intermediateCompletion()
+                    })
+                } else {
+                    if let contentNode = self.contentContainerNode.contentNode, case let .controller(controller) = contentNode {
+                        controller.sourceView.isHidden = false
+                    }
+                    
+                    if let snapshotView = controller.view.snapshotContentTree(keepTransform: true) {
+                        self.contentContainerNode.view.addSubview(snapshotView)
+                    }
+                    
+                    self.contentContainerNode.allowsGroupOpacity = true
+                    self.contentContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false, completion: { _ in
+                        completedContentNode = true
+                        intermediateCompletion()
+                    })
+                }
             }
         }
     }
-    
+       
     func addRelativeContentOffset(_ offset: CGPoint, transition: ContainedViewLayoutTransition) {
         if let presentationNode = self.presentationNode {
             presentationNode.addRelativeContentOffset(offset, transition: transition)
@@ -2322,10 +2635,12 @@ public extension ContextExtractedContentSource {
 public final class ContextControllerTakeControllerInfo {
     public let contentAreaInScreenSpace: CGRect
     public let sourceNode: () -> (UIView, CGRect)?
+    public let animationBundle: (() -> (UIView, CGRect, UIView, CGRect, UIView, Bool, () -> Void, () -> Void, () -> Void, () -> Void))?
     
-    public init(contentAreaInScreenSpace: CGRect, sourceNode: @escaping () -> (UIView, CGRect)?) {
+    public init(contentAreaInScreenSpace: CGRect, sourceNode: @escaping () -> (UIView, CGRect)?, animationBundle: (() -> (UIView, CGRect, UIView, CGRect, UIView, Bool, () -> Void, () -> Void, () -> Void, () -> Void))? = nil) {
         self.contentAreaInScreenSpace = contentAreaInScreenSpace
         self.sourceNode = sourceNode
+        self.animationBundle = animationBundle
     }
 }
 
@@ -2519,8 +2834,10 @@ public final class ContextController: ViewController, StandalonePresentableContr
     public var premiumReactionsSelected: (() -> Void)?
     
     public var getOverlayViews: (() -> [UIView])?
+
+    private let isExpandingAnimation: Bool
     
-    public init(account: Account, presentationData: PresentationData, source: ContextContentSource, items: Signal<ContextController.Items, NoError>, recognizer: TapLongTapOrDoubleTapGestureRecognizer? = nil, gesture: ContextGesture? = nil, workaroundUseLegacyImplementation: Bool = false) {
+    public init(account: Account, presentationData: PresentationData, source: ContextContentSource, items: Signal<ContextController.Items, NoError>, recognizer: TapLongTapOrDoubleTapGestureRecognizer? = nil, gesture: ContextGesture? = nil, workaroundUseLegacyImplementation: Bool = false, isExpandingAnimation: Bool = false) {
         self.account = account
         self.presentationData = presentationData
         self.source = source
@@ -2528,6 +2845,7 @@ public final class ContextController: ViewController, StandalonePresentableContr
         self.recognizer = recognizer
         self.gesture = gesture
         self.workaroundUseLegacyImplementation = workaroundUseLegacyImplementation
+        self.isExpandingAnimation = isExpandingAnimation
         
         super.init(navigationBarPresentationData: nil)
               
@@ -2616,7 +2934,7 @@ public final class ContextController: ViewController, StandalonePresentableContr
             default:
                 break
             }
-        })
+        }, isExpandingAnimation: isExpandingAnimation)
         self.controllerNode.dismissedForCancel = self.dismissedForCancel
         self.displayNodeDidLoad()
         

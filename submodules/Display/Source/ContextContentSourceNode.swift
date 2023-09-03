@@ -118,11 +118,13 @@ public final class ContextControllerContentNode: ASDisplayNode {
     public let sourceView: UIView
     public let controller: ViewController
     private let tapped: () -> Void
+    public let animationBundle: (UIView, CGRect, UIView, CGRect, UIView, Bool, () -> Void, () -> Void, () -> Void, () -> Void)?
     
-    public init(sourceView: UIView, controller: ViewController, tapped: @escaping () -> Void) {
+    public init(sourceView: UIView, controller: ViewController, tapped: @escaping () -> Void, animationBundle: (UIView, CGRect, UIView, CGRect, UIView, Bool, () -> Void, () -> Void, () -> Void, () -> Void)? = nil) {
         self.sourceView = sourceView
         self.controller = controller
         self.tapped = tapped
+        self.animationBundle = animationBundle
         
         super.init()
         

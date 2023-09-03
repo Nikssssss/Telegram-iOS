@@ -1307,7 +1307,69 @@ class ChatListItemNode: ItemListRevealOptionsItemNode {
                     threadId = topicItem.id
                 }
             }
-            item.interaction.activateChatPreview(item, threadId, strongSelf.contextContainer, gesture, nil)
+
+            let isTitleHidden = strongSelf.titleNode.isHidden
+            let isCredibilityIconHidden = strongSelf.credibilityIconView?.isHidden ?? true
+            let isMutedIconHidden = strongSelf.mutedIconNode.isHidden
+            let isAvatarContainerHidden = strongSelf.avatarContainerNode.isHidden
+            
+            guard let (animationView, animationViewFrame) = strongSelf.makeAnimationView() else { return }
+            
+            var isGroupReference = false
+            if case .groupReference = strongSelf.item?.content {
+                isGroupReference = true
+            }
+            
+            let avatarNodeAsImage = strongSelf.avatarContainerNode.view.asImage()
+            let avatarImageNode = ASImageNode()
+            avatarImageNode.image = avatarNodeAsImage
+            
+            strongSelf.avatarNode.storyIndicator?.view?.isHidden = true
+            let avatarCopyView = strongSelf.avatarNode.view.snapshotContentTree() ?? .init()
+            strongSelf.avatarNode.storyIndicator?.view?.isHidden = false
+            
+            let animationBundle = (
+                animationView: animationView,
+                animationViewFrame: animationViewFrame,
+                avatarView: avatarImageNode.view,
+                avatarViewFrame: strongSelf.avatarContainerNode.frame,
+                avatarCopyView: avatarCopyView,
+                isGroupReference: isGroupReference,
+                willAnimateIn: { [weak self] in
+                    guard let self else { return }
+                    
+                    self.titleNode.isHidden = true
+                    self.credibilityIconView?.isHidden = true
+                    self.mutedIconNode.isHidden = true
+                    self.avatarContainerNode.isHidden = true
+                },
+                didAnimateIn: { [weak self] in
+                    guard let self else { return }
+                    
+                    self.titleNode.isHidden = isTitleHidden
+                    self.credibilityIconView?.isHidden = isCredibilityIconHidden
+                    self.mutedIconNode.isHidden = isMutedIconHidden
+                    self.avatarContainerNode.isHidden = isAvatarContainerHidden
+                },
+                willAnimateOut: { [weak self] in
+                    guard let self else { return }
+                    
+                    self.titleNode.isHidden = true
+                    self.credibilityIconView?.isHidden = true
+                    self.mutedIconNode.isHidden = true
+                    self.avatarContainerNode.isHidden = true
+                },
+                didAnimateOut: { [weak self] in
+                    guard let self else { return }
+                    
+                    self.titleNode.isHidden = isTitleHidden
+                    self.credibilityIconView?.isHidden = isCredibilityIconHidden
+                    self.mutedIconNode.isHidden = isMutedIconHidden
+                    self.avatarContainerNode.isHidden = isAvatarContainerHidden
+                }
+            )
+
+            item.interaction.activateChatPreview(item, threadId, strongSelf, gesture, nil, animationBundle)
         }
         
         self.onDidLoad { [weak self] _  in
@@ -1324,11 +1386,64 @@ class ChatListItemNode: ItemListRevealOptionsItemNode {
         self.cachedDataDisposable.dispose()
     }
     
+    private func makeAnimationView() -> (UIView, CGRect)? {
+        let animationView = UIView()
+        let titleSnapshotView = titleNode.view.snapshotContentTree()
+        let credibilityIconSnapshotView = credibilityIconView?.snapshotContentTree()
+        let mutedIconSnapshotView = mutedIconNode.layer.snapshotContentTreeAsView()
+        
+        let interitemOffset: CGFloat = 3
+        
+        guard let titleSnapshotView else { return nil }
+        
+        animationView.addSubview(titleSnapshotView)
+        titleSnapshotView.frame = CGRect(x: 0, y: 0, width: titleSnapshotView.frame.width, height: titleSnapshotView.frame.height)
+        
+        if let credibilityIconSnapshotView, credibilityIconComponent != nil, let credibilityIconView, !credibilityIconView.isHidden {
+            animationView.addSubview(credibilityIconSnapshotView)
+            
+            credibilityIconSnapshotView.frame = CGRect(x: titleSnapshotView.frame.width + interitemOffset, y: 0, width: credibilityIconSnapshotView.frame.width, height: credibilityIconSnapshotView.frame.height)
+        }
+        
+        if let mutedIconSnapshotView, let mutedIcon = mutedIconNode.image, !mutedIconNode.isHidden {
+            animationView.addSubview(mutedIconSnapshotView)
+            
+            let lastLineRect: CGRect
+            if let rect = titleNode.cachedLayout?.linesRects().last {
+                lastLineRect = CGRect(origin: CGPoint(x: 0.0, y: titleNode.frame.height - rect.height - 2.0), size: CGSize(width: rect.width, height: rect.height + 2.0))
+            } else {
+                lastLineRect = CGRect(origin: CGPoint(), size: titleNode.frame.size)
+            }
+            
+            let x: CGFloat
+            if let credibilityIconSnapshotView {
+                x = titleSnapshotView.frame.width + interitemOffset + credibilityIconSnapshotView.frame.width - 1
+            } else {
+                x = titleSnapshotView.frame.width - 2
+            }
+            
+            mutedIconSnapshotView.frame = CGRect(x: x, y: titleSnapshotView.frame.maxY - lastLineRect.height / 2 - mutedIcon.size.height / 2, width: mutedIconSnapshotView.frame.width, height: mutedIconSnapshotView.frame.height)
+        }
+
+        var animationViewWidth = titleSnapshotView.frame.width
+        if let credibilityIconSnapshotView, credibilityIconComponent != nil, let credibilityIconView, !credibilityIconView.isHidden {
+            animationViewWidth += (interitemOffset + credibilityIconSnapshotView.frame.width)
+        }
+        if mutedIconSnapshotView != nil, let mutedIcon = mutedIconNode.image, !mutedIconNode.isHidden {
+            animationViewWidth += (mutedIcon.size.width - 5)
+        }
+        
+        let animationViewFrame = CGRect(x: 10 + avatarContainerNode.frame.width + 10, y: 0, width: animationViewWidth, height: max(titleSnapshotView.frame.height, mutedIconSnapshotView?.frame.height ?? 0, credibilityIconSnapshotView?.frame.height ?? 0))
+        animationView.frame = animationViewFrame
+        
+        return (animationView, animationViewFrame)
+    }
+    
     override func secondaryAction(at point: CGPoint) {
         guard let item = self.item else {
             return
         }
-        item.interaction.activateChatPreview(item, nil, self.contextContainer, nil, point)
+        item.interaction.activateChatPreview(item, nil, self.contextContainer, nil, point, nil)
     }
     
     func setupItem(item: ChatListItem, synchronousLoads: Bool) {
@@ -3908,6 +4023,15 @@ class ChatListItemNode: ItemListRevealOptionsItemNode {
             case .groupReference:
                 item.interaction.openStories(.archive, self)
             }
+        }
+    }
+}
+
+private extension UIView {
+    func asImage() -> UIImage {
+        let renderer = UIGraphicsImageRenderer(bounds: bounds)
+        return renderer.image { rendererContext in
+            layer.render(in: rendererContext.cgContext)
         }
     }
 }

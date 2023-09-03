@@ -565,7 +565,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     private var avatarNode: ChatAvatarNavigationNode?
     private var storyStats: PeerStoryStats?
     
-    public init(context: AccountContext, chatLocation: ChatLocation, chatLocationContextHolder: Atomic<ChatLocationContextHolder?> = Atomic<ChatLocationContextHolder?>(value: nil), subject: ChatControllerSubject? = nil, botStart: ChatControllerInitialBotStart? = nil, attachBotStart: ChatControllerInitialAttachBotStart? = nil, botAppStart: ChatControllerInitialBotAppStart? = nil, mode: ChatControllerPresentationMode = .standard(previewing: false), peekData: ChatPeekTimeout? = nil, peerNearbyData: ChatPeerNearbyData? = nil, chatListFilter: Int32? = nil, chatNavigationStack: [ChatNavigationStackItem] = []) {
+    public init(context: AccountContext, chatLocation: ChatLocation, chatLocationContextHolder: Atomic<ChatLocationContextHolder?> = Atomic<ChatLocationContextHolder?>(value: nil), subject: ChatControllerSubject? = nil, botStart: ChatControllerInitialBotStart? = nil, attachBotStart: ChatControllerInitialAttachBotStart? = nil, botAppStart: ChatControllerInitialBotAppStart? = nil, mode: ChatControllerPresentationMode = .standard(previewing: false), peekData: ChatPeekTimeout? = nil, peerNearbyData: ChatPeerNearbyData? = nil, chatListFilter: Int32? = nil, chatNavigationStack: [ChatNavigationStackItem] = [], isTitleHidden: Bool = false) {
         let _ = ChatControllerCount.modify { value in
             return value + 1
         }
@@ -4658,6 +4658,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 strongSelf.interfaceInteraction?.beginMessageSearch(.everything, "")
             }
         }
+        self.chatTitleView?.isTitleHidden = isTitleHidden
         
         let chatInfoButtonItem: UIBarButtonItem
         switch chatLocation {
@@ -4725,6 +4726,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             
             chatInfoButtonItem = UIBarButtonItem(customDisplayNode: avatarNode)!
             self.avatarNode = avatarNode
+            avatarNode.isHidden = isTitleHidden
         case .feed:
             chatInfoButtonItem = UIBarButtonItem(title: "", style: .plain, target: nil, action: nil)
         }

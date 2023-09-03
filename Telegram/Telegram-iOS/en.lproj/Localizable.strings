@@ -4446,6 +4446,9 @@ Sorry for the inconvenience.";
 "ChatList.UndoArchiveRevealedText" = "Swipe left on the archive to hide it.";
 "ChatList.ArchivedChatsTitle" = "Archived Chats";
 
+"ChatList.ArchiveHint.SwipeForArchive" = "Swipe down for archive";
+"ChatList.ArchiveHint.ReleaseForArchive" = "Release for archive";
+
 "PasscodeSettings.PasscodeOptions" = "Passcode Options";
 "PasscodeSettings.DoNotMatch" = "Passcodes don't match. Please try again.";
 
